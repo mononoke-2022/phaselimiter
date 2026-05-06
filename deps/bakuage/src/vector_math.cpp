@@ -1,28 +1,50 @@
 #include "bakuage/vector_math.h"
 
+#include <cstring>
 #include <complex>
+
+#ifndef BAKUAGE_USE_IPP
+#define BAKUAGE_USE_IPP 1
+#endif
+
+#if BAKUAGE_USE_IPP
 #include "ipp.h"
+#endif
+
 #include "bakuage/memory.h"
 
+#if BAKUAGE_USE_IPP
 static_assert(sizeof(std::complex<float>) == sizeof(Ipp32fc), "ipp float complex size must be same as std complex size");
 static_assert(sizeof(std::complex<double>) == sizeof(Ipp64fc), "ipp double complex size must be same as std complex size");
+#else
+static_assert(sizeof(std::complex<float>) == 2 * sizeof(float), "float complex must be interleaved real/imag");
+static_assert(sizeof(std::complex<double>) == 2 * sizeof(double), "double complex must be interleaved real/imag");
+#endif
 
 namespace bakuage {
 
-    template <>
-    void VectorMulConstantInplace<float, float>(const float &c, float *output, int n) {
-        ippsMulC_32f_I(c, output, n);
-    }
+	    template <>
+	    void VectorMulConstantInplace<float, float>(const float &c, float *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMulC_32f_I(c, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] *= c;
+#endif
+	    }
 
     template <>
     void VectorMulConstantInplace<double, float>(const double &c, float *output, int n) {
         VectorMulConstantInplace<float, float>(c, output, n);
     }
 
-    template <>
-    void VectorMulConstantInplace<double, double>(const double &c, double *output, int n) {
-        ippsMulC_64f_I(c, output, n);
-    }
+	    template <>
+	    void VectorMulConstantInplace<double, double>(const double &c, double *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMulC_64f_I(c, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] *= c;
+#endif
+	    }
 
     template <>
     void VectorMulConstantInplace<float, double>(const float &c, double *output, int n) {
@@ -44,40 +66,68 @@ namespace bakuage {
         VectorMulConstantInplace(c, (double *)output, 2 * n);
     }
 
-    template <>
-    void VectorMulConstantInplace<std::complex<float>, std::complex<float>>(const std::complex<float> &c, std::complex<float> *output, int n) {
-        ippsMulC_32fc_I(*((Ipp32fc *)&c), (Ipp32fc *)output, n);
-    }
+	    template <>
+	    void VectorMulConstantInplace<std::complex<float>, std::complex<float>>(const std::complex<float> &c, std::complex<float> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMulC_32fc_I(*((Ipp32fc *)&c), (Ipp32fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] *= c;
+#endif
+	    }
 
-    template <>
-    void VectorMulConstantInplace<std::complex<double>, std::complex<double>>(const std::complex<double> &c, std::complex<double> *output, int n) {
-        ippsMulC_64fc_I(*((Ipp64fc *)&c), (Ipp64fc *)output, n);
-    }
+	    template <>
+	    void VectorMulConstantInplace<std::complex<double>, std::complex<double>>(const std::complex<double> &c, std::complex<double> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMulC_64fc_I(*((Ipp64fc *)&c), (Ipp64fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] *= c;
+#endif
+	    }
 
-    template <>
-    void VectorMulConstant<float>(const float *x, const float &c, float *output, int n) {
-        ippsMulC_32f(x, c, output, n);
-    }
+	    template <>
+	    void VectorMulConstant<float>(const float *x, const float &c, float *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMulC_32f(x, c, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = x[i] * c;
+#endif
+	    }
 
-    template <>
-    void VectorMulConstant<double>(const double *x, const double &c, double *output, int n) {
-        ippsMulC_64f(x, c, output, n);
-    }
+	    template <>
+	    void VectorMulConstant<double>(const double *x, const double &c, double *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMulC_64f(x, c, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = x[i] * c;
+#endif
+	    }
 
-    template <>
-    void VectorMulInplace<float, float>(const float *x, float *output, int n) {
-        ippsMul_32f_I(x, output, n);
-    }
+	    template <>
+	    void VectorMulInplace<float, float>(const float *x, float *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMul_32f_I(x, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] *= x[i];
+#endif
+	    }
 
-    template <>
-    void VectorMulInplace<double, double>(const double *x, double *output, int n) {
-        ippsMul_64f_I(x, output, n);
-    }
+	    template <>
+	    void VectorMulInplace<double, double>(const double *x, double *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMul_64f_I(x, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] *= x[i];
+#endif
+	    }
 
-    template <>
-    void VectorMulInplace<float, std::complex<float>>(const float *x, std::complex<float> *output, int n) {
-        ippsMul_32f32fc_I(x, (Ipp32fc *)output, n);
-    }
+	    template <>
+	    void VectorMulInplace<float, std::complex<float>>(const float *x, std::complex<float> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMul_32f32fc_I(x, (Ipp32fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] *= x[i];
+#endif
+	    }
 
     template <>
     void VectorMulInplace<double, std::complex<double>>(const double *x, std::complex<double> *output, int n) {
@@ -87,35 +137,59 @@ namespace bakuage {
         }
     }
 
-    template <>
-    void VectorMulInplace<std::complex<float>, std::complex<float>>(const std::complex<float> *x, std::complex<float> *output, int n) {
-        ippsMul_32fc_I((Ipp32fc *)x, (Ipp32fc *)output, n);
-    }
+	    template <>
+	    void VectorMulInplace<std::complex<float>, std::complex<float>>(const std::complex<float> *x, std::complex<float> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMul_32fc_I((Ipp32fc *)x, (Ipp32fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] *= x[i];
+#endif
+	    }
 
-    template <>
-    void VectorMulInplace<std::complex<double>, std::complex<double>>(const std::complex<double> *x, std::complex<double> *output, int n) {
-        ippsMul_64fc_I((Ipp64fc *)x, (Ipp64fc *)output, n);
-    }
+	    template <>
+	    void VectorMulInplace<std::complex<double>, std::complex<double>>(const std::complex<double> *x, std::complex<double> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMul_64fc_I((Ipp64fc *)x, (Ipp64fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] *= x[i];
+#endif
+	    }
 
-    template <>
-    void VectorMul<float, float>(const float *x, const float *y, float *output, int n) {
-        ippsMul_32f(x, y, output, n);
-    }
+	    template <>
+	    void VectorMul<float, float>(const float *x, const float *y, float *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMul_32f(x, y, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = x[i] * y[i];
+#endif
+	    }
 
-    template <>
-    void VectorMul<double, double>(const double *x, const double *y, double *output, int n) {
-        ippsMul_64f(x, y, output, n);
-    }
+	    template <>
+	    void VectorMul<double, double>(const double *x, const double *y, double *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMul_64f(x, y, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = x[i] * y[i];
+#endif
+	    }
 
-    template <>
-    void VectorMul<float, std::complex<float>>(const float *x, const std::complex<float> *y, std::complex<float> *output, int n) {
-        ippsMul_32f32fc(x, (Ipp32fc *)y, (Ipp32fc *)output, n);
-    }
+	    template <>
+	    void VectorMul<float, std::complex<float>>(const float *x, const std::complex<float> *y, std::complex<float> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMul_32f32fc(x, (Ipp32fc *)y, (Ipp32fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = x[i] * y[i];
+#endif
+	    }
 
-    template <>
-    void VectorMul<std::complex<float>, std::complex<float>>(const std::complex<float> *x, const std::complex<float> *y, std::complex<float> *output, int n) {
-        ippsMul_32fc((Ipp32fc *)x, (Ipp32fc *)y, (Ipp32fc *)output, n);
-    }
+	    template <>
+	    void VectorMul<std::complex<float>, std::complex<float>>(const std::complex<float> *x, const std::complex<float> *y, std::complex<float> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMul_32fc((Ipp32fc *)x, (Ipp32fc *)y, (Ipp32fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = x[i] * y[i];
+#endif
+	    }
 
     template <>
     void VectorMul<double, std::complex<double>>(const double *x, const std::complex<double> *y, std::complex<double> *output, int n) {
@@ -125,14 +199,19 @@ namespace bakuage {
         }
     }
 
-    template <>
-    void VectorMul<std::complex<double>, std::complex<double>>(const std::complex<double> *x, const std::complex<double> *y, std::complex<double> *output, int n) {
-        ippsMul_64fc((Ipp64fc *)x, (Ipp64fc *)y, (Ipp64fc *)output, n);
-    }
+	    template <>
+	    void VectorMul<std::complex<double>, std::complex<double>>(const std::complex<double> *x, const std::complex<double> *y, std::complex<double> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMul_64fc((Ipp64fc *)x, (Ipp64fc *)y, (Ipp64fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = x[i] * y[i];
+#endif
+	    }
 
-    template <>
-    void VectorMulPermInplace<std::complex<float>>(const std::complex<float> *x, std::complex<float> *output, int n) {
-        ippsMulPerm_32f_I((const float *)x, (float *)output, 2 * n);
+#if BAKUAGE_USE_IPP
+	    template <>
+	    void VectorMulPermInplace<std::complex<float>>(const std::complex<float> *x, std::complex<float> *output, int n) {
+	        ippsMulPerm_32f_I((const float *)x, (float *)output, 2 * n);
     }
 
     template <>
@@ -146,64 +225,106 @@ namespace bakuage {
     }
 
     template <>
-    void VectorMulConj<std::complex<double>>(const std::complex<double> *x, const std::complex<double> *y, std::complex<double> *output, int n) {
-        ippsMulByConj_64fc_A53((Ipp64fc *)x, (Ipp64fc *)y, (Ipp64fc *)output, n);
-    }
+	    void VectorMulConj<std::complex<double>>(const std::complex<double> *x, const std::complex<double> *y, std::complex<double> *output, int n) {
+	        ippsMulByConj_64fc_A53((Ipp64fc *)x, (Ipp64fc *)y, (Ipp64fc *)output, n);
+	    }
+#endif
 
-    template <>
-    void VectorAddConstantInplace<float>(const float &c, float *output, int n) {
-        ippsAddC_32f_I(c, output, n);
-    }
+	    template <>
+	    void VectorAddConstantInplace<float>(const float &c, float *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsAddC_32f_I(c, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] += c;
+#endif
+	    }
 
-    template <>
-    void VectorAddConstantInplace<double>(const double &c, double *output, int n) {
-        ippsAddC_64f_I(c, output, n);
-    }
+	    template <>
+	    void VectorAddConstantInplace<double>(const double &c, double *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsAddC_64f_I(c, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] += c;
+#endif
+	    }
 
-    template <>
-    void VectorAddInplace<float>(const float *x, float *output, int n) {
-        ippsAdd_32f_I(x, output, n);
-    }
+	    template <>
+	    void VectorAddInplace<float>(const float *x, float *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsAdd_32f_I(x, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] += x[i];
+#endif
+	    }
 
-    template <>
-    void VectorAddInplace<double>(const double *x, double *output, int n) {
-        ippsAdd_64f_I(x, output, n);
-    }
+	    template <>
+	    void VectorAddInplace<double>(const double *x, double *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsAdd_64f_I(x, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] += x[i];
+#endif
+	    }
 
-    template <>
-    void VectorAddInplace<std::complex<float>>(const std::complex<float> *x, std::complex<float> *output, int n) {
-        ippsAdd_32fc_I((Ipp32fc *)x, (Ipp32fc *)output, n);
-    }
+	    template <>
+	    void VectorAddInplace<std::complex<float>>(const std::complex<float> *x, std::complex<float> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsAdd_32fc_I((Ipp32fc *)x, (Ipp32fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] += x[i];
+#endif
+	    }
 
-    template <>
-    void VectorAddInplace<std::complex<double>>(const std::complex<double> *x, std::complex<double> *output, int n) {
-        ippsAdd_64fc_I((Ipp64fc *)x, (Ipp64fc *)output, n);
-    }
+	    template <>
+	    void VectorAddInplace<std::complex<double>>(const std::complex<double> *x, std::complex<double> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsAdd_64fc_I((Ipp64fc *)x, (Ipp64fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] += x[i];
+#endif
+	    }
 
-    template <>
-    void VectorAdd<float>(const float *x, const float *y, float *output, int n) {
-        ippsAdd_32f(x, y, output, n);
-    }
+	    template <>
+	    void VectorAdd<float>(const float *x, const float *y, float *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsAdd_32f(x, y, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = x[i] + y[i];
+#endif
+	    }
 
-    template <>
-    void VectorAdd<double>(const double *x, const double *y, double *output, int n) {
-        ippsAdd_64f(x, y, output, n);
-    }
+	    template <>
+	    void VectorAdd<double>(const double *x, const double *y, double *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsAdd_64f(x, y, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = x[i] + y[i];
+#endif
+	    }
 
-    template <>
-    void VectorAdd<std::complex<float>>(const std::complex<float> *x, const std::complex<float> *y, std::complex<float> *output, int n) {
-        ippsAdd_32fc((Ipp32fc *)x, (Ipp32fc *)y, (Ipp32fc *)output, n);
-    }
+	    template <>
+	    void VectorAdd<std::complex<float>>(const std::complex<float> *x, const std::complex<float> *y, std::complex<float> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsAdd_32fc((Ipp32fc *)x, (Ipp32fc *)y, (Ipp32fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = x[i] + y[i];
+#endif
+	    }
 
-    template <>
-    void VectorAdd<std::complex<double>>(const std::complex<double> *x, const std::complex<double> *y, std::complex<double> *output, int n) {
-        ippsAdd_64fc((Ipp64fc *)x, (Ipp64fc *)y, (Ipp64fc *)output, n);
-    }
+	    template <>
+	    void VectorAdd<std::complex<double>>(const std::complex<double> *x, const std::complex<double> *y, std::complex<double> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsAdd_64fc((Ipp64fc *)x, (Ipp64fc *)y, (Ipp64fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = x[i] + y[i];
+#endif
+	    }
 
 
-    template <>
-    void VectorSubConstantRev<float>(const float *x, const float &c, float *output, int n) {
-        ippsSubCRev_32f(x, c, output, n);
+#if BAKUAGE_USE_IPP
+	    template <>
+	    void VectorSubConstantRev<float>(const float *x, const float &c, float *output, int n) {
+	        ippsSubCRev_32f(x, c, output, n);
     }
 
     template <>
@@ -383,31 +504,45 @@ namespace bakuage {
     }
 
     template <>
-    void VectorInvInplace<double>(double *output, int n) {
-        // ippsDivCRev_64f_Iがないので自前
-        for (int i = 0; i < n; i++) {
-            output[i] = 1.0 / output[i];
-        }
-    }
+	    void VectorInvInplace<double>(double *output, int n) {
+	        // ippsDivCRev_64f_Iがないので自前
+	        for (int i = 0; i < n; i++) {
+	            output[i] = 1.0 / output[i];
+	        }
+	    }
+#endif
 
-    template <>
-    void VectorSet<float>(const float &c, float *output, int n) {
-        ippsSet_32f(c, output, n);
-    }
+	    template <>
+	    void VectorSet<float>(const float &c, float *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsSet_32f(c, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = c;
+#endif
+	    }
 
-    template <>
-    void VectorSet<double>(const double &c, double *output, int n) {
-        ippsSet_64f(c, output, n);
-    }
+	    template <>
+	    void VectorSet<double>(const double &c, double *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsSet_64f(c, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = c;
+#endif
+	    }
 
-    template <>
-    void VectorSet<int>(const int &c, int *output, int n) {
-        ippsSet_32s(c, output, n);
-    }
+	    template <>
+	    void VectorSet<int>(const int &c, int *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsSet_32s(c, output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = c;
+#endif
+	    }
 
-    template <>
-    void VectorDecimate<float>(const float *x, int src_n, float *output, int factor) {
-        int dest_n = 0;
+#if BAKUAGE_USE_IPP
+	    template <>
+	    void VectorDecimate<float>(const float *x, int src_n, float *output, int factor) {
+	        int dest_n = 0;
         int phase = 0;
         ippsSampleDown_32f(x, src_n, output, &dest_n, factor, &phase);
     }
@@ -489,72 +624,120 @@ namespace bakuage {
     }
 
     template <>
-    void VectorConjInplace<std::complex<double>>(std::complex<double> *output, int n) {
-        ippsConj_64fc_I((Ipp64fc *)output, n);
-    }
+	    void VectorConjInplace<std::complex<double>>(std::complex<double> *output, int n) {
+	        ippsConj_64fc_I((Ipp64fc *)output, n);
+	    }
+#endif
 
-    template <>
-    void VectorMove<float>(const float *x, float *output, int n) {
-        ippsMove_32f(x, output, n);
-    }
+	    template <>
+	    void VectorMove<float>(const float *x, float *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMove_32f(x, output, n);
+#else
+	        std::memmove(output, x, sizeof(float) * n);
+#endif
+	    }
 
-    template <>
-    void VectorMove<double>(const double *x, double *output, int n) {
-        ippsMove_64f(x, output, n);
-    }
+	    template <>
+	    void VectorMove<double>(const double *x, double *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMove_64f(x, output, n);
+#else
+	        std::memmove(output, x, sizeof(double) * n);
+#endif
+	    }
 
-    template <>
-    void VectorMove<std::complex<float>>(const std::complex<float> *x, std::complex<float> *output, int n) {
-        ippsMove_32fc((Ipp32fc *)x, (Ipp32fc *)output, n);
-    }
+	    template <>
+	    void VectorMove<std::complex<float>>(const std::complex<float> *x, std::complex<float> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsMove_32fc((Ipp32fc *)x, (Ipp32fc *)output, n);
+#else
+	        std::memmove(output, x, sizeof(std::complex<float>) * n);
+#endif
+	    }
 
-    template <>
-    void VectorZero<float>(float *output, int n) {
-        ippsZero_32f(output, n);
-    }
+	    template <>
+	    void VectorZero<float>(float *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsZero_32f(output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = 0;
+#endif
+	    }
 
-    template <>
-    void VectorZero<std::complex<float>>(std::complex<float> *output, int n) {
-        ippsZero_32fc((Ipp32fc *)output, n);
-    }
+	    template <>
+	    void VectorZero<std::complex<float>>(std::complex<float> *output, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsZero_32fc((Ipp32fc *)output, n);
+#else
+	        for (int i = 0; i < n; i++) output[i] = std::complex<float>(0, 0);
+#endif
+	    }
 
-    template <>
-    float VectorDot<float>(const float *x, const float *y, int n) {
-        float result = 0;
+#if BAKUAGE_USE_IPP
+	    template <>
+	    float VectorDot<float>(const float *x, const float *y, int n) {
+	        float result = 0;
         ippsDotProd_32f(x, y, n, &result);
         return result;
     }
 
     template <>
-    double VectorDot<double>(const double *x, const double *y, int n) {
-        double result = 0;
-        ippsDotProd_64f(x, y, n, &result);
-        return result;
-    }
+	    double VectorDot<double>(const double *x, const double *y, int n) {
+	        double result = 0;
+	        ippsDotProd_64f(x, y, n, &result);
+	        return result;
+	    }
+#endif
 
-	template <>
-	void VectorReplaceNanInplace<float>(const float &c, float *x, int n) {
-		ippsReplaceNAN_32f_I(x, n, c);
-	}
+		template <>
+		void VectorReplaceNanInplace<float>(const float &c, float *x, int n) {
+#if BAKUAGE_USE_IPP
+			ippsReplaceNAN_32f_I(x, n, c);
+#else
+			for (int i = 0; i < n; i++) {
+				if (x[i] != x[i]) x[i] = c;
+			}
+#endif
+		}
 
-    template <>
-    void VectorEnsureNonnegativeInplace<float>(float *x, int n) {
-        ippsThreshold_32f_I(x, n, 0, ippCmpLess);
-    }
+	    template <>
+	    void VectorEnsureNonnegativeInplace<float>(float *x, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsThreshold_32f_I(x, n, 0, ippCmpLess);
+#else
+	        for (int i = 0; i < n; i++) {
+	            if (x[i] < 0) x[i] = 0;
+	        }
+#endif
+	    }
 
-    template <>
-    void VectorEnsureNonnegativeInplace<double>(double *x, int n) {
-        ippsThreshold_64f_I(x, n, 0, ippCmpLess);
-    }
+	    template <>
+	    void VectorEnsureNonnegativeInplace<double>(double *x, int n) {
+#if BAKUAGE_USE_IPP
+	        ippsThreshold_64f_I(x, n, 0, ippCmpLess);
+#else
+	        for (int i = 0; i < n; i++) {
+	            if (x[i] < 0) x[i] = 0;
+	        }
+#endif
+	    }
 
-	template <>
-	void VectorBothThresholdInplace<float>(const float &c, float *x, int n) {
-		ippsThreshold_32f_I(x, n, -c, ippCmpLess);
-		ippsThreshold_32f_I(x, n, c, ippCmpGreater);
-	}
+		template <>
+		void VectorBothThresholdInplace<float>(const float &c, float *x, int n) {
+#if BAKUAGE_USE_IPP
+			ippsThreshold_32f_I(x, n, -c, ippCmpLess);
+			ippsThreshold_32f_I(x, n, c, ippCmpGreater);
+#else
+			for (int i = 0; i < n; i++) {
+				if (x[i] < -c) x[i] = -c;
+				if (x[i] > c) x[i] = c;
+			}
+#endif
+		}
 
-    template <>
-    void VectorConvert<float, float>(const float *x, float *output, int n) {
+	    template <>
+	    void VectorConvert<float, float>(const float *x, float *output, int n) {
         if (x != output) {
             VectorMove(x, output, n);
         }
@@ -564,12 +747,13 @@ namespace bakuage {
     void VectorConvert<double, double>(const double *x, double *output, int n) {
         if (x != output) {
             VectorMove(x, output, n);
-        }
-    }
+	        }
+	    }
 
-    template <>
-    void VectorConvert<float, Float16>(const float *x, Float16 *output, int n) {
-        ippsConvert_32f16f(x, (Ipp16f *)output, n, ippRndNear);
+#if BAKUAGE_USE_IPP
+	    template <>
+	    void VectorConvert<float, Float16>(const float *x, Float16 *output, int n) {
+	        ippsConvert_32f16f(x, (Ipp16f *)output, n, ippRndNear);
     }
 
     template <>
@@ -620,8 +804,9 @@ namespace bakuage {
     void VectorConvolve<double>(const double *x, int nx, const double *y, int ny, double *output) {
         int buffer_size = 0;
         ippsConvolveGetBufferSize(nx, ny, ipp64f, ippAlgAuto, &buffer_size);
-        AlignedPodVector<Ipp8u> buffer(buffer_size);
+	        AlignedPodVector<Ipp8u> buffer(buffer_size);
 
-        ippsConvolve_64f((const Ipp64f *)x, nx, (const Ipp64f *)y, ny, (Ipp64f *)output, ippAlgAuto, buffer.data());
-    }
-}
+	        ippsConvolve_64f((const Ipp64f *)x, nx, (const Ipp64f *)y, ny, (Ipp64f *)output, ippAlgAuto, buffer.data());
+	    }
+#endif
+	}

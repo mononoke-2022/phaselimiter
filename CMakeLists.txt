@@ -34,6 +34,13 @@ endif()
 
 option(DISABLE_TARGET_BENCH "disable bench" OFF)
 option(DISABLE_TARGET_TEST "disable test" OFF)
+option(BAKUAGE_USE_IPP "use Intel IPP for bakuage DSP helpers" ON)
+
+if(BAKUAGE_USE_IPP)
+  add_definitions(-DBAKUAGE_USE_IPP=1)
+else()
+  add_definitions(-DBAKUAGE_USE_IPP=0)
+endif()
 
 # arma_H5Ovisitが見つからないエラー回避 https://stackoverflow.com/questions/62590370/c-armadillo-procedure-entry-point-h5ovisit-could-not-be-located-in-libarmadi
 add_definitions(-DARMA_DONT_USE_HDF5)
