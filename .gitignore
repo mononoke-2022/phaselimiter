@@ -40,3 +40,9 @@ version.h
 /resource/sound_quality2_cache
 /build
 /built
+
+# local Apple Silicon build attempts
+/build_mac_arm64_attempt*/
+/deps/optim/src/optim-stamp/
+/deps/optim/tmp/
+/deps/optim/header_only_version/

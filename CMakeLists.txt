@@ -105,14 +105,20 @@ if(WIN32)
   set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 elseif(APPLE)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-  if(SANDYBRIDGE_SUPPORT)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=sandybridge -mtune=sandybridge -mavx")
-  else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=core-avx2 -mtune=core-avx2 -mavx2 -mfma")
+
+  if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 OLD)
   endif()
+  set(Boost_NO_BOOST_CMAKE ON)
+  find_package(Boost REQUIRED COMPONENTS filesystem math_tr1 serialization)
 
-  find_package(Boost REQUIRED COMPONENTS filesystem math_tr1 serialization system)
-
+  if(DEFINED ENV{CONDA_PREFIX} AND NOT "$ENV{CONDA_PREFIX}" STREQUAL "")
+    set(LOCAL_PREFIX $ENV{CONDA_PREFIX})
+  elseif(EXISTS "/opt/homebrew/lib/libtbb.dylib")
+    set(LOCAL_PREFIX "/opt/homebrew")
+  elseif(EXISTS "/usr/local/lib/libtbb.dylib")
+    set(LOCAL_PREFIX "/usr/local")
+  endif()
   set(CONDA_PREFIX $ENV{CONDA_PREFIX})
   set(BAKUAGE_LINK_LIBRARIES
      # libfftw3.a
@@ -123,13 +129,12 @@ elseif(APPLE)
      # libvorbisenc.a
      # libvorbis.a
      # libogg.a
-     libboost_system.a
      libboost_filesystem.a
      libboost_serialization.a
      libboost_math_tr1.a
      libboost_iostreams.a
-     ${CONDA_PREFIX}/lib/libtbb.dylib
-     ${CONDA_PREFIX}/lib/libtbbmalloc.dylib
+     ${LOCAL_PREFIX}/lib/libtbb.dylib
+     ${LOCAL_PREFIX}/lib/libtbbmalloc.dylib
      libippi.a
      libipps.a
      libippvm.a
