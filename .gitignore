@@ -1,5 +1,6 @@
 !.gitkeep
 /tmp
+.DS_Store
 
 # cmake
 CMakeCache.txt
@@ -46,3 +47,6 @@ version.h
 /deps/optim/src/optim-stamp/
 /deps/optim/tmp/
 /deps/optim/header_only_version/
+
+# local golden artifacts
+/golden/
