@@ -111,7 +111,7 @@ if(WIN32)
   )
   set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 elseif(APPLE)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 
   if(POLICY CMP0167)
     cmake_policy(SET CMP0167 OLD)
@@ -262,6 +262,12 @@ include_directories(
 )
 
 file(GLOB BAKUAGE_SOURCES deps/bakuage/src/*)
+if(APPLE AND NOT BAKUAGE_USE_IPP)
+  list(REMOVE_ITEM BAKUAGE_SOURCES
+    ${CMAKE_SOURCE_DIR}/deps/bakuage/src/fir_filter4.cpp
+    ${CMAKE_SOURCE_DIR}/deps/bakuage/src/window_func.cpp
+  )
+endif()
 message("BAKUAGE_SOURCES: ${BAKUAGE_SOURCES}")
 add_library(bakuage STATIC ${BAKUAGE_SOURCES})
 target_link_libraries(bakuage
