@@ -36,6 +36,7 @@ option(DISABLE_TARGET_BENCH "disable bench" OFF)
 option(DISABLE_TARGET_TEST "disable test" OFF)
 option(BAKUAGE_USE_IPP "use Intel IPP for bakuage DSP helpers" ON)
 option(ENABLE_DFT_GOLDEN_CAPTURE "build DFT golden capture tool" OFF)
+option(ENABLE_DFT_GOLDEN_COMPARE "build DFT golden comparison tool" OFF)
 
 if(BAKUAGE_USE_IPP)
   add_definitions(-DBAKUAGE_USE_IPP=1)
@@ -289,6 +290,10 @@ add_executable(dft_golden_capture src/tools/dft_golden_capture.cpp)
 target_link_libraries(dft_golden_capture
   bakuage
 )
+endif()
+
+if(ENABLE_DFT_GOLDEN_COMPARE)
+add_executable(dft_compare_golden src/tools/dft_compare_golden.cpp)
 endif()
 
 file(GLOB BAKUAGE_SND_FILE_INFO_SOURCES src/snd_file_info/*)
