@@ -19,7 +19,7 @@ namespace bakuage {
     }
     
     TemporaryFiles::~TemporaryFiles() {
-        for (const auto temporary: temporaries_) {
+        for (const auto &temporary: temporaries_) {
             boost::filesystem::remove(temporary);
         }
     }
