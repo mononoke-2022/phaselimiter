@@ -37,6 +37,7 @@ option(DISABLE_TARGET_TEST "disable test" OFF)
 option(BAKUAGE_USE_IPP "use Intel IPP for bakuage DSP helpers" ON)
 option(ENABLE_DFT_GOLDEN_CAPTURE "build DFT golden capture tool" OFF)
 option(ENABLE_DFT_GOLDEN_COMPARE "build DFT golden comparison tool" OFF)
+option(ENABLE_DFT_VDSP_FORWARD_PROTO "build Apple vDSP DFT forward prototype output tool" OFF)
 
 if(BAKUAGE_USE_IPP)
   add_definitions(-DBAKUAGE_USE_IPP=1)
@@ -294,6 +295,17 @@ endif()
 
 if(ENABLE_DFT_GOLDEN_COMPARE)
 add_executable(dft_compare_golden src/tools/dft_compare_golden.cpp)
+endif()
+
+if(ENABLE_DFT_VDSP_FORWARD_PROTO)
+if(APPLE)
+add_executable(dft_vdsp_forward_prototype src/tools/dft_vdsp_forward_prototype.cpp)
+target_link_libraries(dft_vdsp_forward_prototype
+  "-framework Accelerate"
+)
+else()
+message(FATAL_ERROR "ENABLE_DFT_VDSP_FORWARD_PROTO is supported only on Apple platforms")
+endif()
 endif()
 
 file(GLOB BAKUAGE_SND_FILE_INFO_SOURCES src/snd_file_info/*)
