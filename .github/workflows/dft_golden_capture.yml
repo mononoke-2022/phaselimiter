@@ -1,0 +1,112 @@
+name: Capture DFT IPP Golden
+
+on:
+  workflow_dispatch:
+
+jobs:
+  capture-dft-golden:
+    name: Capture DFT golden outputs on Linux x64 with IPP
+    runs-on: ubuntu-24.04
+
+    env:
+      BUILD_DIR: build_dft_golden_capture
+      CAPTURE_DIR: dft_golden
+      IPPROOT: /opt/intel/oneapi/ipp/latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize submodules
+        run: git submodule update --init --recursive
+
+      - name: Install system dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            ca-certificates \
+            cmake \
+            g++ \
+            gcc \
+            gpg-agent \
+            libarmadillo-dev \
+            libboost-all-dev \
+            libpng-dev \
+            libsndfile1-dev \
+            libtbb-dev \
+            ninja-build \
+            wget \
+            zlib1g-dev
+
+      - name: Install Intel oneAPI IPP
+        run: |
+          set -euxo pipefail
+          wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+            | gpg --dearmor \
+            | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+            | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo apt-get install -y intel-oneapi-ipp-devel
+
+          # TODO: Verify the oneAPI IPP package layout on the first Actions run.
+          # Existing CMake Linux paths expect /opt/intel/ipp/include and
+          # /opt/intel/ipp/lib/intel64, while oneAPI installs under
+          # /opt/intel/oneapi/ipp/latest.
+          if [ ! -e /opt/intel/ipp ]; then
+            sudo ln -s /opt/intel/oneapi/ipp/latest /opt/intel/ipp
+          fi
+
+      - name: Environment summary
+        run: |
+          set -euxo pipefail
+          {
+            echo "github_sha=${GITHUB_SHA}"
+            echo "runner_os=${RUNNER_OS}"
+            uname -a
+            cmake --version
+            gcc --version
+            g++ --version
+            echo "IPPROOT=${IPPROOT}"
+            find /opt/intel/oneapi/ipp/latest -maxdepth 3 -type f \( -name 'ipp.h' -o -name 'libipps.*' -o -name 'libippcore.*' \) | sort
+          } 2>&1 | tee env_summary.log
+
+      - name: Configure capture target
+        run: |
+          set -euxo pipefail
+          cmake -S . -B "${BUILD_DIR}" -G Ninja \
+            -DBAKUAGE_USE_IPP=ON \
+            -DENABLE_DFT_GOLDEN_CAPTURE=ON \
+            -DDISABLE_TARGET_BENCH=ON \
+            -DDISABLE_TARGET_TEST=ON \
+            2>&1 | tee configure_dft_golden_capture.log
+
+      - name: Build capture target
+        run: |
+          set -euxo pipefail
+          cmake --build "${BUILD_DIR}" --target dft_golden_capture --verbose \
+            2>&1 | tee build_dft_golden_capture.log
+
+      - name: Run capture
+        run: |
+          set -euxo pipefail
+          "${BUILD_DIR}/bin/dft_golden_capture" \
+            --output-dir "${CAPTURE_DIR}" \
+            --case-set minimal \
+            --format json-binary \
+            2>&1 | tee run_dft_golden_capture.log
+
+      - name: Upload golden artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dft-ipp-golden-${{ github.sha }}
+          path: |
+            ${{ env.CAPTURE_DIR }}/manifest.json
+            ${{ env.CAPTURE_DIR }}/inputs/*.bin
+            ${{ env.CAPTURE_DIR }}/outputs/*.bin
+            env_summary.log
+            configure_dft_golden_capture.log
+            build_dft_golden_capture.log
+            run_dft_golden_capture.log
+          if-no-files-found: error
