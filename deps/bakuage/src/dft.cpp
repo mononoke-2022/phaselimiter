@@ -1,12 +1,34 @@
 #include "bakuage/dft.h"
 
+#ifndef BAKUAGE_USE_IPP
+#define BAKUAGE_USE_IPP 1
+#endif
+
+#if defined(__APPLE__) && !BAKUAGE_USE_IPP
+#define BAKUAGE_USE_VDSP_REALDFT_FLOAT_FORWARD 1
+#else
+#define BAKUAGE_USE_VDSP_REALDFT_FLOAT_FORWARD 0
+#endif
+
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <mutex>
+#include <stdexcept>
 #include <unordered_map>
+
+#if !BAKUAGE_USE_VDSP_REALDFT_FLOAT_FORWARD
 #include "ipp.h"
+#endif
 #include "bakuage/utils.h"
 
+#if BAKUAGE_USE_VDSP_REALDFT_FLOAT_FORWARD
+#include <Accelerate/Accelerate.h>
+#include <vector>
+#endif
+
+#if !BAKUAGE_USE_VDSP_REALDFT_FLOAT_FORWARD
 namespace {
     constexpr int ipp_verbose = 0;
     
@@ -176,7 +198,7 @@ namespace {
         IppsFFTSpec_R_32f *spec_ptr_;
         bakuage::FftMemoryBuffer spec_buffer_;
     };
-    
+
     struct MyIppR2CDft64: public MyIppDftBase {
         typedef double Float;
         typedef int Size;
@@ -792,3 +814,194 @@ namespace bakuage {
     }
     
 }
+#else
+namespace {
+    struct MyVdspForwardDftBase {
+        MyVdspForwardDftBase(): workBufferSize(0) {}
+        int workBufferSize;
+    };
+
+    struct MyVdspR2CForwardDft32: public MyVdspForwardDftBase {
+        typedef float Float;
+        typedef int Size;
+        typedef std::hash<int> SizeHash;
+
+        explicit MyVdspR2CForwardDft32(int len): len_(len), setup_(nullptr), legacy_complex_(false) {
+            if (len_ <= 0) throw std::runtime_error("vDSP RealDft<float>::Forward length must be positive");
+            workBufferSize = WorkBufferSize(len_);
+
+            if (len_ % 2 == 0) {
+                setup_ = vDSP_DFT_zrop_CreateSetup(nullptr, static_cast<vDSP_Length>(len_), vDSP_DFT_FORWARD);
+            } else {
+                setup_ = vDSP_DFT_zop_CreateSetup(nullptr, static_cast<vDSP_Length>(len_), vDSP_DFT_FORWARD);
+                if (!setup_) {
+                    setup_ = vDSP_DFT_CreateSetup(nullptr, static_cast<vDSP_Length>(len_));
+                    legacy_complex_ = setup_ != nullptr;
+                }
+            }
+            if (!setup_) throw std::runtime_error("failed to create vDSP RealDft<float>::Forward setup");
+        }
+
+        void Execute(const Float *src, Float *dest, void *work) const {
+            if (work) {
+                ExecuteWithWork(src, dest, reinterpret_cast<Float *>(work));
+            } else {
+                std::vector<Float> fallback(static_cast<std::size_t>(workBufferSize / sizeof(Float)));
+                ExecuteWithWork(src, dest, fallback.data());
+            }
+        }
+
+    private:
+        static int WorkBufferSize(int len) {
+            const int scalar_count = (len % 2 == 0) ? 2 * len : 4 * len;
+            return static_cast<int>(scalar_count * sizeof(Float));
+        }
+
+        void ExecuteWithWork(const Float *src, Float *dest, Float *work) const {
+            if (len_ % 2 == 0) {
+                ExecuteEven(src, dest, work);
+            } else {
+                ExecuteOdd(src, dest, work);
+            }
+        }
+
+        void ExecuteEven(const Float *src, Float *dest, Float *work) const {
+            const int half = len_ / 2;
+            Float *even = work;
+            Float *odd = even + half;
+            Float *out_real = odd + half;
+            Float *out_imag = out_real + half;
+
+            for (int j = 0; j < half; j++) {
+                even[j] = src[2 * j];
+                odd[j] = src[2 * j + 1];
+            }
+
+            vDSP_DFT_Execute(setup_, even, odd, out_real, out_imag);
+
+            // RealDft<float>::Forward exposes IPP CCS as interleaved complex
+            // scalars: DC at bin 0, positive-frequency bins 1..N/2-1, and the
+            // even-length Nyquist singleton at bin N/2 with imag forced to 0.
+            // vDSP zrop returns twice the IPP_FFT_NODIV_BY_ANY amplitude, so
+            // keep the prototype-verified 0.5 scale here.
+            constexpr Float scale = 0.5f;
+            dest[0] = scale * out_real[0];
+            dest[1] = 0.0f;
+            for (int k = 1; k < half; k++) {
+                dest[2 * k + 0] = scale * out_real[k];
+                dest[2 * k + 1] = scale * out_imag[k];
+            }
+            dest[2 * half + 0] = scale * out_imag[0];
+            dest[2 * half + 1] = 0.0f;
+        }
+
+        void ExecuteOdd(const Float *src, Float *dest, Float *work) const {
+            const int half = len_ / 2;
+            Float *in_real = work;
+            Float *in_imag = in_real + len_;
+            Float *out_real = in_imag + len_;
+            Float *out_imag = out_real + len_;
+
+            std::copy(src, src + len_, in_real);
+            std::fill(in_imag, in_imag + len_, 0.0f);
+
+            if (legacy_complex_) {
+                vDSP_DFT_zop(setup_, in_real, in_imag, 1, out_real, out_imag, 1, vDSP_DFT_FORWARD);
+            } else {
+                vDSP_DFT_Execute(setup_, in_real, in_imag, out_real, out_imag);
+            }
+
+            // Odd N uses an exact-length complex DFT with zero imaginary input,
+            // not zero padding. There is no Nyquist singleton; preserve the
+            // final stored odd bin's imaginary component and only force DC imag
+            // to zero to match the public Forward layout.
+            dest[0] = out_real[0];
+            dest[1] = 0.0f;
+            for (int k = 1; k <= half; k++) {
+                dest[2 * k + 0] = out_real[k];
+                dest[2 * k + 1] = out_imag[k];
+            }
+        }
+
+        int len_;
+        vDSP_DFT_Setup setup_;
+        bool legacy_complex_;
+    };
+
+    template <class T>
+    struct MyVdspDftLibrary {
+        static MyVdspDftLibrary &GetInstance() {
+            static MyVdspDftLibrary instance;
+            return instance;
+        }
+        const T *get(const typename T::Size &len) {
+            std::lock_guard<std::mutex> lock(mtx_);
+            const auto found = dfts_.find(len);
+            if (found != dfts_.end()) return found->second;
+            const auto dft = new T(len);
+            dfts_.insert(std::pair<typename T::Size, T *>(len, dft));
+            return dft;
+        }
+    private:
+        std::mutex mtx_;
+        std::unordered_map<typename T::Size, T *, typename T::SizeHash> dfts_;
+    };
+}
+
+namespace bakuage {
+    FftMemoryBuffer::FftMemoryBuffer(int size): size_(size), data_(size ? std::malloc(size) : nullptr) {
+        if (size_) std::memset(data_, 0, size_);
+    }
+
+    FftMemoryBuffer::~FftMemoryBuffer() {
+        if (data_) std::free(data_);
+    }
+
+    FftMemoryBuffer::FftMemoryBuffer(const FftMemoryBuffer& x): size_(x.size_), data_(size_ ? std::malloc(size_) : nullptr) {
+        if (size_) std::memcpy(data_, x.data_, size_);
+    }
+
+    FftMemoryBuffer::FftMemoryBuffer(FftMemoryBuffer&& x): size_(x.size_), data_(x.data_) {
+        x.size_ = 0;
+        x.data_ = nullptr;
+    }
+
+    FftMemoryBuffer& FftMemoryBuffer::operator=(const FftMemoryBuffer& x) {
+        if (this == &x) return *this;
+        if (data_) std::free(data_);
+        size_ = x.size_;
+        data_ = size_ ? std::malloc(size_) : nullptr;
+        if (size_) std::memcpy(data_, x.data_, size_);
+        return *this;
+    }
+
+    FftMemoryBuffer& FftMemoryBuffer::operator=(FftMemoryBuffer&& x) {
+        if (this == &x) return *this;
+        if (data_) std::free(data_);
+        size_ = x.size_;
+        data_ = x.data_;
+        x.size_ = 0;
+        x.data_ = nullptr;
+        return *this;
+    }
+
+    RealDft<float>::RealDft(int len, bool no_internal_work) {
+        const auto dft = MyVdspDftLibrary<MyVdspR2CForwardDft32>::GetInstance().get(len);
+        dft_ptr_ = (void *)dft;
+        fft_ptr_ = nullptr;
+        if (!no_internal_work) {
+            work_ = FftMemoryBuffer(work_size());
+        }
+    }
+
+    void RealDft<float>::Forward(const Float *input, Float *output, void *work_data) const {
+        const auto dft = (MyVdspR2CForwardDft32 *)dft_ptr_;
+        dft->Execute(input, output, work_data);
+    }
+
+    size_t RealDft<float>::work_size() const {
+        const auto dft = (MyVdspR2CForwardDft32 *)dft_ptr_;
+        return dft->workBufferSize;
+    }
+}
+#endif

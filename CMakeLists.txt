@@ -154,6 +154,14 @@ elseif(APPLE)
      pthread
      m
   )
+  if(NOT BAKUAGE_USE_IPP)
+    list(REMOVE_ITEM BAKUAGE_LINK_LIBRARIES
+      libippi.a
+      libipps.a
+      libippvm.a
+      libippcore.a
+    )
+  endif()
   link_directories(BEFORE
     ${Boost_LIBRARY_DIRS}
     ${CONDA_PREFIX}/lib
@@ -268,6 +276,7 @@ file(GLOB BAKUAGE_SOURCES deps/bakuage/src/*)
 if(APPLE AND NOT BAKUAGE_USE_IPP)
   list(REMOVE_ITEM BAKUAGE_SOURCES
     ${CMAKE_SOURCE_DIR}/deps/bakuage/src/fir_filter4.cpp
+    ${CMAKE_SOURCE_DIR}/deps/bakuage/src/vector_math.cpp
     ${CMAKE_SOURCE_DIR}/deps/bakuage/src/window_func.cpp
   )
 endif()
@@ -276,6 +285,11 @@ add_library(bakuage STATIC ${BAKUAGE_SOURCES})
 target_link_libraries(bakuage
   ${BAKUAGE_LINK_LIBRARIES}
 )
+if(APPLE AND NOT BAKUAGE_USE_IPP)
+  target_link_libraries(bakuage
+    "-framework Accelerate"
+  )
+endif()
 if(WIN32)
 else()
 add_dependencies(bakuage optim)
