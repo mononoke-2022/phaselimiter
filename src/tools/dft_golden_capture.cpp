@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cctype>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -20,6 +21,10 @@
 #endif
 
 #include "bakuage/dft.h"
+
+#ifndef BAKUAGE_USE_IPP
+#define BAKUAGE_USE_IPP 1
+#endif
 
 namespace {
 
@@ -127,14 +132,16 @@ Options ParseArgs(int argc, char **argv) {
                 throw std::runtime_error("only --format json-binary is supported");
             }
         } else {
-            throw std::runtime_error("usage: dft_golden_capture --output-dir <dir> [--case-set minimal|forward_extended] [--format json-binary]");
+            throw std::runtime_error("usage: dft_golden_capture --output-dir <dir> [--case-set minimal|forward_extended|minimal_backward] [--format json-binary]");
         }
     }
     if (options.output_dir.empty()) {
         throw std::runtime_error("--output-dir is required");
     }
-    if (options.case_set != "minimal" && options.case_set != "forward_extended") {
-        throw std::runtime_error("only --case-set minimal or forward_extended is supported");
+    if (options.case_set != "minimal" &&
+        options.case_set != "forward_extended" &&
+        options.case_set != "minimal_backward") {
+        throw std::runtime_error("only --case-set minimal, forward_extended, or minimal_backward is supported");
     }
     return options;
 }
@@ -318,6 +325,73 @@ std::vector<float> GenerateInput(int n, const std::string &waveform) {
     throw std::runtime_error("unknown waveform: " + waveform);
 }
 
+int SpectrumScalarCount(int n) {
+    return 2 * (n / 2 + 1);
+}
+
+bool HasOrdinaryComplexBin(int n) {
+    return n >= 3;
+}
+
+int FirstOrdinaryComplexBin(int n) {
+    if (!HasOrdinaryComplexBin(n)) {
+        throw std::runtime_error("no ordinary complex bin for length: " + std::to_string(n));
+    }
+    return 1;
+}
+
+std::vector<float> GenerateBackwardSpectrum(int n, const std::string &case_name) {
+    std::vector<float> spectrum(SpectrumScalarCount(n), 0.0f);
+    const int half = n / 2;
+    const bool even = (n % 2) == 0;
+
+    if (case_name == "dc_only") {
+        spectrum[0] = 1.0f;
+        return spectrum;
+    }
+    if (case_name == "single_bin_real") {
+        const int bin = FirstOrdinaryComplexBin(n);
+        spectrum[2 * bin] = 1.0f;
+        return spectrum;
+    }
+    if (case_name == "single_bin_imag") {
+        const int bin = FirstOrdinaryComplexBin(n);
+        spectrum[2 * bin + 1] = 1.0f;
+        return spectrum;
+    }
+    if (case_name == "final_even_nyquist_real") {
+        if (!even) throw std::runtime_error("final_even_nyquist_real requires even length");
+        spectrum[2 * half] = 1.0f;
+        return spectrum;
+    }
+    if (case_name == "final_odd_bin_complex") {
+        if (even) throw std::runtime_error("final_odd_bin_complex requires odd length");
+        spectrum[2 * half] = 0.5f;
+        spectrum[2 * half + 1] = -0.75f;
+        return spectrum;
+    }
+    if (case_name == "conjugate_safe_noise") {
+        std::uint32_t state = 0xBADC0DEu ^ static_cast<std::uint32_t>(n * 2654435761u);
+        spectrum[0] = static_cast<float>((2.0 * (static_cast<double>(XorShift32(&state)) / 4294967295.0) - 1.0) * 0.5);
+        spectrum[1] = 0.0f;
+        for (int bin = 1; bin <= half; bin++) {
+            const double real_u = static_cast<double>(XorShift32(&state)) / 4294967295.0;
+            const double imag_u = static_cast<double>(XorShift32(&state)) / 4294967295.0;
+            spectrum[2 * bin] = static_cast<float>((2.0 * real_u - 1.0) * 0.5);
+            spectrum[2 * bin + 1] = (even && bin == half) ? 0.0f : static_cast<float>((2.0 * imag_u - 1.0) * 0.5);
+        }
+        return spectrum;
+    }
+    if (case_name == "forward_output_from_time_cases") {
+        const std::vector<float> input = GenerateInput(n, "hand_mixed");
+        bakuage::RealDft<float> dft(n);
+        dft.Forward(input.data(), spectrum.data());
+        return spectrum;
+    }
+
+    throw std::runtime_error("unknown backward spectrum case: " + case_name);
+}
+
 void WriteFloatBinary(const std::string &path, const std::vector<float> &values) {
     std::ofstream out(path.c_str(), std::ios::binary);
     if (!out) throw std::runtime_error("failed to open output: " + path);
@@ -396,19 +470,80 @@ std::vector<TestCase> ForwardExtendedCases() {
     return cases;
 }
 
+std::vector<TestCase> MinimalBackwardCases() {
+    const int lengths[] = {2, 3, 4, 5, 8, 9, 16, 1024, 12345};
+    std::vector<TestCase> cases;
+    for (int length : lengths) {
+        cases.push_back(TestCase{length, "dc_only"});
+        if (HasOrdinaryComplexBin(length)) {
+            cases.push_back(TestCase{length, "single_bin_real"});
+            cases.push_back(TestCase{length, "single_bin_imag"});
+        }
+        if (length % 2 == 0) {
+            cases.push_back(TestCase{length, "final_even_nyquist_real"});
+        } else {
+            cases.push_back(TestCase{length, "final_odd_bin_complex"});
+        }
+        cases.push_back(TestCase{length, "conjugate_safe_noise"});
+        cases.push_back(TestCase{length, "forward_output_from_time_cases"});
+    }
+    return cases;
+}
+
 std::vector<TestCase> CasesForSet(const std::string &case_set) {
     if (case_set == "minimal") return MinimalCases();
     if (case_set == "forward_extended") return ForwardExtendedCases();
+    if (case_set == "minimal_backward") return MinimalBackwardCases();
     throw std::runtime_error("unsupported case set: " + case_set);
 }
 
-std::string CaseId(const TestCase &test_case) {
+std::string MethodForCaseSet(const std::string &case_set) {
+    if (case_set == "minimal_backward") return "Backward";
+    return "Forward";
+}
+
+std::string InputKindForCaseSet(const std::string &case_set) {
+    if (case_set == "minimal_backward") return "real_dft_spectrum";
+    return "real_time_domain";
+}
+
+std::string MethodFileToken(const std::string &method) {
+    std::string token = method;
+    std::transform(token.begin(), token.end(), token.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return token;
+}
+
+std::string CaseId(const TestCase &test_case, const std::string &method) {
     std::ostringstream ss;
-    ss << "float_n" << test_case.length << "_" << test_case.waveform << "_forward_oop_internal_work";
+    ss << "float_n" << test_case.length << "_" << test_case.waveform << "_" << MethodFileToken(method) << "_oop_internal_work";
     return ss.str();
 }
 
-void WriteManifest(const std::string &path, const std::string &case_set, const std::vector<Record> &records) {
+void RunForward(int length, const std::vector<float> &input, std::vector<float> *output) {
+    bakuage::RealDft<float> dft(length);
+    dft.Forward(input.data(), output->data());
+}
+
+void RunBackward(int length, const std::vector<float> &input, std::vector<float> *output) {
+#if defined(__APPLE__) && !BAKUAGE_USE_IPP
+    (void)length;
+    (void)input;
+    (void)output;
+    throw std::runtime_error("--case-set minimal_backward requires RealDft<float>::Backward; Apple/non-IPP production build currently has Forward only");
+#else
+    bakuage::RealDft<float> dft(length);
+    dft.Backward(input.data(), output->data());
+#endif
+}
+
+void WriteManifest(
+        const std::string &path,
+        const std::string &case_set,
+        const std::string &method,
+        const std::string &input_kind,
+        const std::vector<Record> &records) {
     std::ofstream out(path.c_str());
     if (!out) throw std::runtime_error("failed to open manifest: " + path);
 
@@ -419,7 +554,8 @@ void WriteManifest(const std::string &path, const std::string &case_set, const s
     out << "  \"git_commit\": \"" << JsonEscape(git_commit) << "\",\n";
     out << "  \"case_set\": \"" << JsonEscape(case_set) << "\",\n";
     out << "  \"precision\": \"float\",\n";
-    out << "  \"method\": \"Forward\",\n";
+    out << "  \"method\": \"" << JsonEscape(method) << "\",\n";
+    out << "  \"input_kind\": \"" << JsonEscape(input_kind) << "\",\n";
     out << "  \"endianness\": \"little\",\n";
     out << "  \"records\": [\n";
     for (std::size_t i = 0; i < records.size(); i++) {
@@ -427,7 +563,8 @@ void WriteManifest(const std::string &path, const std::string &case_set, const s
         out << "    {\n";
         out << "      \"id\": \"" << JsonEscape(r.id) << "\",\n";
         out << "      \"precision\": \"float\",\n";
-        out << "      \"method\": \"Forward\",\n";
+        out << "      \"method\": \"" << JsonEscape(method) << "\",\n";
+        out << "      \"input_kind\": \"" << JsonEscape(input_kind) << "\",\n";
         out << "      \"case_name\": \"" << JsonEscape(r.waveform) << "\",\n";
         out << "      \"length\": " << r.length << ",\n";
         out << "      \"input_file\": \"" << JsonEscape(r.input_file) << "\",\n";
@@ -455,17 +592,27 @@ int main(int argc, char **argv) {
         MakeDir(input_dir);
         MakeDir(output_dir);
 
+        const std::string method = MethodForCaseSet(options.case_set);
+        const std::string input_kind = InputKindForCaseSet(options.case_set);
         std::vector<Record> records;
         for (const TestCase &test_case : CasesForSet(options.case_set)) {
-            const std::string id = CaseId(test_case);
+            const std::string id = CaseId(test_case, method);
             const std::string input_file = "inputs/float_n" + std::to_string(test_case.length) + "_" + test_case.waveform + ".bin";
             const std::string output_file = "outputs/" + id + ".bin";
 
-            std::vector<float> input = GenerateInput(test_case.length, test_case.waveform);
-            std::vector<float> output(2 * (test_case.length / 2 + 1), 0.0f);
-
-            bakuage::RealDft<float> dft(test_case.length);
-            dft.Forward(input.data(), output.data());
+            std::vector<float> input;
+            std::vector<float> output;
+            if (method == "Forward") {
+                input = GenerateInput(test_case.length, test_case.waveform);
+                output.assign(SpectrumScalarCount(test_case.length), 0.0f);
+                RunForward(test_case.length, input, &output);
+            } else if (method == "Backward") {
+                input = GenerateBackwardSpectrum(test_case.length, test_case.waveform);
+                output.assign(test_case.length, 0.0f);
+                RunBackward(test_case.length, input, &output);
+            } else {
+                throw std::runtime_error("unsupported method: " + method);
+            }
 
             WriteFloatBinary(JoinPath(options.output_dir, input_file), input);
             WriteFloatBinary(JoinPath(options.output_dir, output_file), output);
@@ -481,7 +628,7 @@ int main(int argc, char **argv) {
             });
         }
 
-        WriteManifest(JoinPath(options.output_dir, "manifest.json"), options.case_set, records);
+        WriteManifest(JoinPath(options.output_dir, "manifest.json"), options.case_set, method, input_kind, records);
         std::cout << "wrote " << records.size() << " DFT golden capture records to " << options.output_dir << std::endl;
         return 0;
     } catch (const std::exception &e) {
