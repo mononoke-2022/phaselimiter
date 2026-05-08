@@ -851,6 +851,8 @@ namespace {
             }
         }
 
+        int len() const { return len_; }
+
     private:
         static int WorkBufferSize(int len) {
             const int scalar_count = (len % 2 == 0) ? 2 * len : 4 * len;
@@ -928,6 +930,108 @@ namespace {
         bool legacy_complex_;
     };
 
+    struct MyVdspR2CBackwardDft32: public MyVdspForwardDftBase {
+        typedef float Float;
+        typedef int Size;
+        typedef std::hash<int> SizeHash;
+
+        static int WorkBufferSize(int len) {
+            const int scalar_count = (len % 2 == 0) ? 2 * len : 4 * len;
+            return static_cast<int>(scalar_count * sizeof(Float));
+        }
+
+        explicit MyVdspR2CBackwardDft32(int len): len_(len), setup_(nullptr), legacy_complex_(false) {
+            if (len_ <= 0) throw std::runtime_error("vDSP RealDft<float>::Backward length must be positive");
+            workBufferSize = WorkBufferSize(len_);
+
+            if (len_ % 2 == 0) {
+                setup_ = vDSP_DFT_zrop_CreateSetup(nullptr, static_cast<vDSP_Length>(len_), vDSP_DFT_INVERSE);
+            } else {
+                setup_ = vDSP_DFT_zop_CreateSetup(nullptr, static_cast<vDSP_Length>(len_), vDSP_DFT_INVERSE);
+                if (!setup_) {
+                    setup_ = vDSP_DFT_CreateSetup(nullptr, static_cast<vDSP_Length>(len_));
+                    legacy_complex_ = setup_ != nullptr;
+                }
+            }
+            if (!setup_) throw std::runtime_error("failed to create vDSP RealDft<float>::Backward setup");
+        }
+
+        void Execute(const Float *src, Float *dest, void *work) const {
+            if (work) {
+                ExecuteWithWork(src, dest, reinterpret_cast<Float *>(work));
+            } else {
+                std::vector<Float> fallback(static_cast<std::size_t>(workBufferSize / sizeof(Float)));
+                ExecuteWithWork(src, dest, fallback.data());
+            }
+        }
+
+    private:
+        void ExecuteWithWork(const Float *src, Float *dest, Float *work) const {
+            if (len_ % 2 == 0) {
+                ExecuteEven(src, dest, work);
+            } else {
+                ExecuteOdd(src, dest, work);
+            }
+        }
+
+        void ExecuteEven(const Float *src, Float *dest, Float *work) const {
+            const int half = len_ / 2;
+            Float *in_real = work;
+            Float *in_imag = in_real + half;
+            Float *even = in_imag + half;
+            Float *odd = even + half;
+
+            // IPP-compatible public CCS stores the even Nyquist real scalar in
+            // the first zrop imaginary slot. Backward remains unnormalized.
+            in_real[0] = src[0];
+            in_imag[0] = src[2 * half];
+            for (int k = 1; k < half; k++) {
+                in_real[k] = src[2 * k + 0];
+                in_imag[k] = src[2 * k + 1];
+            }
+
+            vDSP_DFT_Execute(setup_, in_real, in_imag, even, odd);
+
+            for (int j = 0; j < half; j++) {
+                dest[2 * j] = even[j];
+                dest[2 * j + 1] = odd[j];
+            }
+        }
+
+        void ExecuteOdd(const Float *src, Float *dest, Float *work) const {
+            const int half = len_ / 2;
+            Float *in_real = work;
+            Float *in_imag = in_real + len_;
+            Float *out_real = in_imag + len_;
+            Float *out_imag = out_real + len_;
+
+            // Odd N has no Nyquist singleton; the final stored bin is a full
+            // complex bin, so build the exact conjugate spectrum without padding.
+            in_real[0] = src[0];
+            in_imag[0] = 0.0f;
+            for (int k = 1; k <= half; k++) {
+                const Float real = src[2 * k + 0];
+                const Float imag = src[2 * k + 1];
+                in_real[k] = real;
+                in_imag[k] = imag;
+                in_real[len_ - k] = real;
+                in_imag[len_ - k] = -imag;
+            }
+
+            if (legacy_complex_) {
+                vDSP_DFT_zop(setup_, in_real, in_imag, 1, out_real, out_imag, 1, vDSP_DFT_INVERSE);
+            } else {
+                vDSP_DFT_Execute(setup_, in_real, in_imag, out_real, out_imag);
+            }
+
+            std::copy(out_real, out_real + len_, dest);
+        }
+
+        int len_;
+        vDSP_DFT_Setup setup_;
+        bool legacy_complex_;
+    };
+
     template <class T>
     struct MyVdspDftLibrary {
         static MyVdspDftLibrary &GetInstance() {
@@ -986,8 +1090,8 @@ namespace bakuage {
     }
 
     RealDft<float>::RealDft(int len, bool no_internal_work) {
-        const auto dft = MyVdspDftLibrary<MyVdspR2CForwardDft32>::GetInstance().get(len);
-        dft_ptr_ = (void *)dft;
+        const auto forward = MyVdspDftLibrary<MyVdspR2CForwardDft32>::GetInstance().get(len);
+        dft_ptr_ = (void *)forward;
         fft_ptr_ = nullptr;
         if (!no_internal_work) {
             work_ = FftMemoryBuffer(work_size());
@@ -999,9 +1103,15 @@ namespace bakuage {
         dft->Execute(input, output, work_data);
     }
 
+    void RealDft<float>::Backward(const Float *input, Float *output, void *work_data) const {
+        const auto forward = (MyVdspR2CForwardDft32 *)dft_ptr_;
+        const auto dft = MyVdspDftLibrary<MyVdspR2CBackwardDft32>::GetInstance().get(forward->len());
+        dft->Execute(input, output, work_data);
+    }
+
     size_t RealDft<float>::work_size() const {
-        const auto dft = (MyVdspR2CForwardDft32 *)dft_ptr_;
-        return dft->workBufferSize;
+        const auto forward = (MyVdspR2CForwardDft32 *)dft_ptr_;
+        return (std::max)(forward->workBufferSize, MyVdspR2CBackwardDft32::WorkBufferSize(forward->len()));
     }
 }
 #endif

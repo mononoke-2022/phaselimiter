@@ -527,15 +527,8 @@ void RunForward(int length, const std::vector<float> &input, std::vector<float> 
 }
 
 void RunBackward(int length, const std::vector<float> &input, std::vector<float> *output) {
-#if defined(__APPLE__) && !BAKUAGE_USE_IPP
-    (void)length;
-    (void)input;
-    (void)output;
-    throw std::runtime_error("--case-set minimal_backward requires RealDft<float>::Backward; Apple/non-IPP production build currently has Forward only");
-#else
     bakuage::RealDft<float> dft(length);
     dft.Backward(input.data(), output->data());
-#endif
 }
 
 void WriteManifest(
