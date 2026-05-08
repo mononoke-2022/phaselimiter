@@ -38,6 +38,7 @@ option(BAKUAGE_USE_IPP "use Intel IPP for bakuage DSP helpers" ON)
 option(ENABLE_DFT_GOLDEN_CAPTURE "build DFT golden capture tool" OFF)
 option(ENABLE_DFT_GOLDEN_COMPARE "build DFT golden comparison tool" OFF)
 option(ENABLE_DFT_VDSP_FORWARD_PROTO "build Apple vDSP DFT forward prototype output tool" OFF)
+option(ENABLE_DFT_VDSP_BACKWARD_PROTO "build Apple vDSP DFT backward prototype output tool" OFF)
 
 if(BAKUAGE_USE_IPP)
   add_definitions(-DBAKUAGE_USE_IPP=1)
@@ -319,6 +320,17 @@ target_link_libraries(dft_vdsp_forward_prototype
 )
 else()
 message(FATAL_ERROR "ENABLE_DFT_VDSP_FORWARD_PROTO is supported only on Apple platforms")
+endif()
+endif()
+
+if(ENABLE_DFT_VDSP_BACKWARD_PROTO)
+if(APPLE)
+add_executable(dft_vdsp_backward_prototype src/tools/dft_vdsp_backward_prototype.cpp)
+target_link_libraries(dft_vdsp_backward_prototype
+  "-framework Accelerate"
+)
+else()
+message(FATAL_ERROR "ENABLE_DFT_VDSP_BACKWARD_PROTO is supported only on Apple platforms")
 endif()
 endif()
 

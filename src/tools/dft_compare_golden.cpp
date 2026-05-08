@@ -121,8 +121,8 @@ std::vector<Record> ReadRecords(const std::string &manifest_path) {
     const picojson::object &root = manifest.get<picojson::object>();
     const std::string precision = RequireString(root, "precision");
     const std::string method = RequireString(root, "method");
-    if (precision != "float" || method != "Forward") {
-        throw std::runtime_error("only RealDft<float>::Forward manifests are supported");
+    if (precision != "float" || (method != "Forward" && method != "Backward")) {
+        throw std::runtime_error("only RealDft<float>::Forward/Backward manifests are supported");
     }
 
     const picojson::value &records_value = RequireField(root, "records");
@@ -140,8 +140,8 @@ std::vector<Record> ReadRecords(const std::string &manifest_path) {
         record.output_file = RequireString(record_object, "output_file");
         record.length = RequireInt(record_object, "length");
         record.output_scalar_count = RequireInt(record_object, "output_scalar_count");
-        if (record.precision != "float" || record.method != "Forward") {
-            throw std::runtime_error("only float Forward records are supported: " + record.id);
+        if (record.precision != "float" || record.method != method) {
+            throw std::runtime_error("record precision/method does not match manifest: " + record.id);
         }
         records.push_back(record);
     }
@@ -223,6 +223,7 @@ void WriteReport(const std::string &path, const Options &options, const std::vec
     const double rms_error_global = scalar_count_global == 0
         ? 0.0
         : std::sqrt(sum_weighted_square_error / static_cast<double>(scalar_count_global));
+    const std::string method = results.empty() ? "" : results[0].record.method;
 
     std::ofstream out(path.c_str());
     if (!out) throw std::runtime_error("failed to open output report: " + path);
@@ -232,7 +233,7 @@ void WriteReport(const std::string &path, const Options &options, const std::vec
     out << "  \"golden_dir\": \"" << JsonEscape(options.golden_dir) << "\",\n";
     out << "  \"candidate_dir\": \"" << JsonEscape(options.candidate_dir) << "\",\n";
     out << "  \"precision\": \"float\",\n";
-    out << "  \"method\": \"Forward\",\n";
+    out << "  \"method\": \"" << JsonEscape(method) << "\",\n";
     out << "  \"record_count\": " << results.size() << ",\n";
     out << "  \"passed_count\": " << passed_count << ",\n";
     out << "  \"failed_count\": " << failed_count << ",\n";
