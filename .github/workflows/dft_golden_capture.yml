@@ -11,6 +11,7 @@ on:
         options:
           - minimal
           - forward_extended
+          - minimal_backward
 
 jobs:
   capture-dft-golden:
