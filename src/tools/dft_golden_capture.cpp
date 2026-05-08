@@ -127,14 +127,14 @@ Options ParseArgs(int argc, char **argv) {
                 throw std::runtime_error("only --format json-binary is supported");
             }
         } else {
-            throw std::runtime_error("usage: dft_golden_capture --output-dir <dir> [--case-set minimal] [--format json-binary]");
+            throw std::runtime_error("usage: dft_golden_capture --output-dir <dir> [--case-set minimal|forward_extended] [--format json-binary]");
         }
     }
     if (options.output_dir.empty()) {
         throw std::runtime_error("--output-dir is required");
     }
-    if (options.case_set != "minimal") {
-        throw std::runtime_error("only --case-set minimal is supported in this first capture tool");
+    if (options.case_set != "minimal" && options.case_set != "forward_extended") {
+        throw std::runtime_error("only --case-set minimal or forward_extended is supported");
     }
     return options;
 }
@@ -145,6 +145,16 @@ std::uint32_t XorShift32(std::uint32_t *state) {
     x ^= x >> 17;
     x ^= x << 5;
     *state = x;
+    return x;
+}
+
+std::vector<float> GenerateNoise(int n, std::uint32_t seed, double scale) {
+    std::vector<float> x(n, 0.0f);
+    std::uint32_t state = seed;
+    for (int i = 0; i < n; i++) {
+        const double u = static_cast<double>(XorShift32(&state)) / 4294967295.0;
+        x[i] = static_cast<float>((2.0 * u - 1.0) * scale);
+    }
     return x;
 }
 
@@ -202,13 +212,107 @@ std::vector<float> GenerateInput(int n, const std::string &waveform) {
         }
         return x;
     }
-    if (waveform == "noise_seed305419896") {
-        std::uint32_t state = 0x12345678u;
+    if (waveform == "sine_nonbin_1p5") {
         for (int i = 0; i < n; i++) {
-            const double u = static_cast<double>(XorShift32(&state)) / 4294967295.0;
-            x[i] = static_cast<float>(2.0 * u - 1.0);
+            x[i] = static_cast<float>(std::sin(2.0 * kPi * 1.5 * i / n + 0.25));
         }
         return x;
+    }
+    if (waveform == "sine_nonbin_7p25") {
+        for (int i = 0; i < n; i++) {
+            x[i] = static_cast<float>(std::sin(2.0 * kPi * 7.25 * i / n + 0.125));
+        }
+        return x;
+    }
+    if (waveform == "sine_nonbin_high") {
+        const double frequency = 0.5 * n - 1.25;
+        for (int i = 0; i < n; i++) {
+            x[i] = static_cast<float>(std::sin(2.0 * kPi * frequency * i / n + 0.375));
+        }
+        return x;
+    }
+    if (waveform == "cosine_nonbin_1p5") {
+        for (int i = 0; i < n; i++) {
+            x[i] = static_cast<float>(std::cos(2.0 * kPi * 1.5 * i / n + 0.25));
+        }
+        return x;
+    }
+    if (waveform == "two_tone_nonbin") {
+        for (int i = 0; i < n; i++) {
+            const double a = std::sin(2.0 * kPi * 1.5 * i / n + 0.25);
+            const double b = std::cos(2.0 * kPi * 7.25 * i / n + 0.125);
+            x[i] = static_cast<float>(0.6 * a + 0.4 * b);
+        }
+        return x;
+    }
+    if (waveform == "noise_seed305419896") {
+        return GenerateNoise(n, 0x12345678u, 1.0);
+    }
+    if (waveform == "noise_seed1") {
+        return GenerateNoise(n, 1u, 1.0);
+    }
+    if (waveform == "noise_seed2") {
+        return GenerateNoise(n, 2u, 1.0);
+    }
+    if (waveform == "noise_seed3735928559") {
+        return GenerateNoise(n, 0xDEADBEEFu, 1.0);
+    }
+    if (waveform == "noise_seed3237998081") {
+        return GenerateNoise(n, 0xC0FFEE01u, 1.0);
+    }
+    if (waveform == "alternating_sign") {
+        for (int i = 0; i < n; i++) {
+            x[i] = (i % 2 == 0) ? 1.0f : -1.0f;
+        }
+        return x;
+    }
+    if (waveform == "sparse_impulses") {
+        x[0] += 1.0f;
+        x[n / 3] += -0.75f;
+        x[n / 2] += 0.5f;
+        x[n - 1] += -0.25f;
+        return x;
+    }
+    if (waveform == "step_half") {
+        for (int i = 0; i < n; i++) {
+            x[i] = i < n / 2 ? 1.0f : -1.0f;
+        }
+        return x;
+    }
+    if (waveform == "near_cancellation_pairs") {
+        for (int i = 0; i < n; i++) {
+            x[i] = (i % 2 == 0) ? 1.0f : -0.999999f;
+        }
+        return x;
+    }
+    if (waveform == "tiny_noise_1e-30") {
+        return GenerateNoise(n, 0x12345678u, 1.0e-30);
+    }
+    if (waveform == "tiny_constant_1e-38") {
+        std::fill(x.begin(), x.end(), static_cast<float>(1.0e-38));
+        return x;
+    }
+    if (waveform == "subnormal_pattern") {
+        const float pattern[] = {
+            0.0f,
+            static_cast<float>(1.0e-45),
+            static_cast<float>(-1.0e-45),
+            static_cast<float>(1.0e-40),
+            static_cast<float>(-1.0e-40),
+        };
+        for (int i = 0; i < n; i++) {
+            x[i] = pattern[i % (sizeof(pattern) / sizeof(pattern[0]))];
+        }
+        return x;
+    }
+    if (waveform == "large_sine_nonbin_1e10") {
+        for (int i = 0; i < n; i++) {
+            x[i] = static_cast<float>(1.0e10 * std::sin(2.0 * kPi * 1.5 * i / n + 0.25));
+        }
+        return x;
+    }
+    if (waveform == "large_noise_1e10") {
+        return GenerateNoise(n, 0x12345678u, 1.0e10);
     }
 
     throw std::runtime_error("unknown waveform: " + waveform);
@@ -245,13 +349,66 @@ std::vector<TestCase> MinimalCases() {
     return cases;
 }
 
+std::vector<TestCase> ForwardExtendedCases() {
+    const int lengths[] = {
+        31, 32, 33,
+        63, 64, 65,
+        255, 256, 257,
+        4095, 4096, 4097,
+        16384, 32768,
+    };
+    const char *waveforms[] = {
+        "zeros",
+        "impulse0",
+        "impulse1",
+        "impulse_last",
+        "constant1",
+        "ramp",
+        "hand_mixed",
+        "sine_bin1",
+        "cosine_bin1",
+        "noise_seed1",
+        "noise_seed2",
+        "noise_seed305419896",
+        "noise_seed3735928559",
+        "noise_seed3237998081",
+        "sine_nonbin_1p5",
+        "sine_nonbin_7p25",
+        "sine_nonbin_high",
+        "cosine_nonbin_1p5",
+        "two_tone_nonbin",
+        "alternating_sign",
+        "sparse_impulses",
+        "step_half",
+        "near_cancellation_pairs",
+        "tiny_noise_1e-30",
+        "tiny_constant_1e-38",
+        "subnormal_pattern",
+        "large_sine_nonbin_1e10",
+        "large_noise_1e10",
+    };
+    std::vector<TestCase> cases;
+    for (int length : lengths) {
+        for (const char *waveform : waveforms) {
+            cases.push_back(TestCase{length, waveform});
+        }
+    }
+    return cases;
+}
+
+std::vector<TestCase> CasesForSet(const std::string &case_set) {
+    if (case_set == "minimal") return MinimalCases();
+    if (case_set == "forward_extended") return ForwardExtendedCases();
+    throw std::runtime_error("unsupported case set: " + case_set);
+}
+
 std::string CaseId(const TestCase &test_case) {
     std::ostringstream ss;
     ss << "float_n" << test_case.length << "_" << test_case.waveform << "_forward_oop_internal_work";
     return ss.str();
 }
 
-void WriteManifest(const std::string &path, const std::vector<Record> &records) {
+void WriteManifest(const std::string &path, const std::string &case_set, const std::vector<Record> &records) {
     std::ofstream out(path.c_str());
     if (!out) throw std::runtime_error("failed to open manifest: " + path);
 
@@ -260,6 +417,7 @@ void WriteManifest(const std::string &path, const std::vector<Record> &records) 
     out << "  \"schema\": \"" << kSchema << "\",\n";
     out << "  \"tool_name\": \"" << kToolName << "\",\n";
     out << "  \"git_commit\": \"" << JsonEscape(git_commit) << "\",\n";
+    out << "  \"case_set\": \"" << JsonEscape(case_set) << "\",\n";
     out << "  \"precision\": \"float\",\n";
     out << "  \"method\": \"Forward\",\n";
     out << "  \"endianness\": \"little\",\n";
@@ -298,7 +456,7 @@ int main(int argc, char **argv) {
         MakeDir(output_dir);
 
         std::vector<Record> records;
-        for (const TestCase &test_case : MinimalCases()) {
+        for (const TestCase &test_case : CasesForSet(options.case_set)) {
             const std::string id = CaseId(test_case);
             const std::string input_file = "inputs/float_n" + std::to_string(test_case.length) + "_" + test_case.waveform + ".bin";
             const std::string output_file = "outputs/" + id + ".bin";
@@ -323,7 +481,7 @@ int main(int argc, char **argv) {
             });
         }
 
-        WriteManifest(JoinPath(options.output_dir, "manifest.json"), records);
+        WriteManifest(JoinPath(options.output_dir, "manifest.json"), options.case_set, records);
         std::cout << "wrote " << records.size() << " DFT golden capture records to " << options.output_dir << std::endl;
         return 0;
     } catch (const std::exception &e) {
