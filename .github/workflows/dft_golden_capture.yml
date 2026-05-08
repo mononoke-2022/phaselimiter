@@ -2,6 +2,15 @@ name: Capture DFT IPP Golden
 
 on:
   workflow_dispatch:
+    inputs:
+      case_set:
+        description: DFT golden capture case set
+        required: true
+        default: minimal
+        type: choice
+        options:
+          - minimal
+          - forward_extended
 
 jobs:
   capture-dft-golden:
@@ -10,7 +19,7 @@ jobs:
 
     env:
       BUILD_DIR: build_dft_golden_capture
-      CAPTURE_DIR: dft_golden
+      CAPTURE_DIR: dft_golden_${{ inputs.case_set }}
       IPPROOT: /opt/intel/oneapi/ipp/latest
 
     steps:
@@ -93,14 +102,14 @@ jobs:
           set -euxo pipefail
           "${BUILD_DIR}/bin/dft_golden_capture" \
             --output-dir "${CAPTURE_DIR}" \
-            --case-set minimal \
+            --case-set "${{ inputs.case_set }}" \
             --format json-binary \
             2>&1 | tee run_dft_golden_capture.log
 
       - name: Upload golden artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dft-ipp-golden-${{ github.sha }}
+          name: dft-golden-capture-${{ inputs.case_set }}-${{ github.sha }}
           path: |
             ${{ env.CAPTURE_DIR }}/manifest.json
             ${{ env.CAPTURE_DIR }}/inputs/*.bin
