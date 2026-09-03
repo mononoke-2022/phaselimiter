@@ -37,6 +37,7 @@ option(DISABLE_TARGET_TEST "disable test" OFF)
 option(BAKUAGE_USE_IPP "use Intel IPP for bakuage DSP helpers" ON)
 option(ENABLE_DFT_GOLDEN_CAPTURE "build DFT golden capture tool" OFF)
 option(ENABLE_DFT_GOLDEN_COMPARE "build DFT golden comparison tool" OFF)
+option(ENABLE_DFT_ROUNDTRIP_VALIDATE "build DFT Forward/Backward roundtrip validation tool" OFF)
 option(ENABLE_DFT_VDSP_FORWARD_PROTO "build Apple vDSP DFT forward prototype output tool" OFF)
 option(ENABLE_DFT_VDSP_BACKWARD_PROTO "build Apple vDSP DFT backward prototype output tool" OFF)
 
@@ -310,6 +311,13 @@ endif()
 
 if(ENABLE_DFT_GOLDEN_COMPARE)
 add_executable(dft_compare_golden src/tools/dft_compare_golden.cpp)
+endif()
+
+if(ENABLE_DFT_ROUNDTRIP_VALIDATE)
+add_executable(dft_roundtrip_validate src/tools/dft_roundtrip_validate.cpp)
+target_link_libraries(dft_roundtrip_validate
+  bakuage
+)
 endif()
 
 if(ENABLE_DFT_VDSP_FORWARD_PROTO)
