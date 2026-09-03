@@ -129,8 +129,30 @@ Regression:
 roundtrip case_set=forward_extended records=392 passed=392 failed=0 nan_or_inf=0
 ```
 
+## Length Probe
+
+Follow-up probing used `test_data/test2.wav` with `--max-frames` to isolate setup behavior without changing production DSP code.
+
+Results:
+
+```text
+1000  fail: failed to create vDSP RealDft<float>::Forward setup
+1001  pass: max_abs_error=3.04871e-07 rms_error=5.53299e-08
+1024  pass: max_abs_error=5.96046e-08 rms_error=1.36841e-08
+10534 fail: failed to create vDSP RealDft<float>::Forward setup
+10535 pass: max_abs_error=1.9814e-06 rms_error=3.05321e-07
+10536 fail: failed to create vDSP RealDft<float>::Forward setup
+12344 fail: failed to create vDSP RealDft<float>::Forward setup
+12345 pass: max_abs_error=3.09007e-06 rms_error=4.0346e-07
+12346 fail: failed to create vDSP RealDft<float>::Forward setup
+16384 pass: max_abs_error=1.63913e-07 rms_error=3.43159e-08
+32768 pass: max_abs_error=2.08616e-07 rms_error=3.78412e-08
+```
+
+This points to the current Apple/non-IPP even-length real DFT setup path accepting power-of-two frame counts but rejecting representative even non-power-of-two audio lengths. Odd non-power-of-two lengths continue to roundtrip through the existing complex DFT fallback path.
+
 ## Conclusion
 
 The current Apple/non-IPP `RealDft<float>::Forward` and `Backward` production paths successfully roundtrip real WAV input at representative power-of-two audio frame lengths and write valid WAV output.
 
-The next unresolved real-audio question is why `N=10534` fails setup here while the synthetic suite covers other non-power-of-two lengths. That should be investigated as a focused validation issue before broadening to `ForwardPerm`, `BackwardPerm`, `RealDft<double>`, or the full `phase_limiter` limiter path.
+The current unresolved real-audio issue is now narrower: even non-power-of-two lengths such as `N=10534` fail vDSP setup on the Apple/non-IPP path, while odd non-power-of-two lengths and power-of-two lengths pass. The likely next production change is an even-length fallback strategy, but that should be handled as a separate DSP change after review rather than hidden inside this validation checkpoint.
