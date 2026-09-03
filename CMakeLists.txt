@@ -38,6 +38,7 @@ option(BAKUAGE_USE_IPP "use Intel IPP for bakuage DSP helpers" ON)
 option(ENABLE_DFT_GOLDEN_CAPTURE "build DFT golden capture tool" OFF)
 option(ENABLE_DFT_GOLDEN_COMPARE "build DFT golden comparison tool" OFF)
 option(ENABLE_DFT_ROUNDTRIP_VALIDATE "build DFT Forward/Backward roundtrip validation tool" OFF)
+option(ENABLE_PHASE_LIMITER_DFT_AUDIO_SMOKE "build phase_limiter audio DFT smoke tool" OFF)
 option(ENABLE_DFT_VDSP_FORWARD_PROTO "build Apple vDSP DFT forward prototype output tool" OFF)
 option(ENABLE_DFT_VDSP_BACKWARD_PROTO "build Apple vDSP DFT backward prototype output tool" OFF)
 
@@ -318,6 +319,13 @@ endif()
 if(ENABLE_DFT_ROUNDTRIP_VALIDATE)
 add_executable(dft_roundtrip_validate src/tools/dft_roundtrip_validate.cpp)
 target_link_libraries(dft_roundtrip_validate
+  bakuage
+)
+endif()
+
+if(ENABLE_PHASE_LIMITER_DFT_AUDIO_SMOKE)
+add_executable(phase_limiter_dft_audio_smoke src/tools/phase_limiter_dft_audio_smoke.cpp)
+target_link_libraries(phase_limiter_dft_audio_smoke
   bakuage
 )
 endif()
