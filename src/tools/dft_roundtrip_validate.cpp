@@ -51,11 +51,11 @@ Options ParseArgs(int argc, char **argv) {
         } else if (arg == "--verbose") {
             options.verbose = true;
         } else {
-            throw std::runtime_error("usage: dft_roundtrip_validate [--case-set minimal|forward_extended] [--abs-tolerance value] [--rel-tolerance value] [--verbose]");
+            throw std::runtime_error("usage: dft_roundtrip_validate [--case-set minimal|forward_extended|apple_length_probe] [--abs-tolerance value] [--rel-tolerance value] [--verbose]");
         }
     }
-    if (options.case_set != "minimal" && options.case_set != "forward_extended") {
-        throw std::runtime_error("only --case-set minimal or forward_extended is supported");
+    if (options.case_set != "minimal" && options.case_set != "forward_extended" && options.case_set != "apple_length_probe") {
+        throw std::runtime_error("only --case-set minimal, forward_extended, or apple_length_probe is supported");
     }
     if (!(options.abs_tolerance >= 0.0) || !(options.rel_tolerance >= 0.0)) {
         throw std::runtime_error("tolerances must be non-negative");
@@ -235,9 +235,25 @@ std::vector<TestCase> ForwardExtendedCases() {
     return cases;
 }
 
+std::vector<TestCase> AppleLengthProbeCases() {
+    const int lengths[] = {
+        1000, 1001, 1024, 10534, 10535, 10536, 12344, 12345, 12346, 16384,
+    };
+    const char *waveforms[] = {
+        "zeros", "impulse0", "impulse_last", "constant1", "ramp",
+        "hand_mixed", "sine_nonbin", "noise_seed305419896",
+    };
+    std::vector<TestCase> cases;
+    for (int length : lengths) {
+        for (const char *waveform : waveforms) cases.push_back(TestCase{length, waveform});
+    }
+    return cases;
+}
+
 std::vector<TestCase> CasesForSet(const std::string &case_set) {
     if (case_set == "minimal") return MinimalCases();
     if (case_set == "forward_extended") return ForwardExtendedCases();
+    if (case_set == "apple_length_probe") return AppleLengthProbeCases();
     throw std::runtime_error("unsupported case set: " + case_set);
 }
 

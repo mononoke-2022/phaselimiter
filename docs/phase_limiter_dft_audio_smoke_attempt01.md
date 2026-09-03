@@ -155,4 +155,6 @@ This points to the current Apple/non-IPP even-length real DFT setup path accepti
 
 The current Apple/non-IPP `RealDft<float>::Forward` and `Backward` production paths successfully roundtrip real WAV input at representative power-of-two audio frame lengths and write valid WAV output.
 
-The current unresolved real-audio issue is now narrower: even non-power-of-two lengths such as `N=10534` fail vDSP setup on the Apple/non-IPP path, while odd non-power-of-two lengths and power-of-two lengths pass. The likely next production change is an even-length fallback strategy, but that should be handled as a separate DSP change after review rather than hidden inside this validation checkpoint.
+At the end of this validation checkpoint, the unresolved real-audio issue was narrowed to even non-power-of-two lengths such as `N=10534` failing vDSP setup on the Apple/non-IPP path, while odd non-power-of-two lengths and power-of-two lengths passed.
+
+Follow-up resolution is documented in `docs/dft_even_length_complex_fallback_attempt01.md`.

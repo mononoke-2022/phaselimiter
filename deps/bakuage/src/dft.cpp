@@ -826,12 +826,19 @@ namespace {
         typedef int Size;
         typedef std::hash<int> SizeHash;
 
-        explicit MyVdspR2CForwardDft32(int len): len_(len), setup_(nullptr), legacy_complex_(false) {
+        explicit MyVdspR2CForwardDft32(int len): len_(len), setup_(nullptr), real_even_(false), legacy_complex_(false) {
             if (len_ <= 0) throw std::runtime_error("vDSP RealDft<float>::Forward length must be positive");
-            workBufferSize = WorkBufferSize(len_);
 
             if (len_ % 2 == 0) {
                 setup_ = vDSP_DFT_zrop_CreateSetup(nullptr, static_cast<vDSP_Length>(len_), vDSP_DFT_FORWARD);
+                real_even_ = setup_ != nullptr;
+                if (!setup_) {
+                    setup_ = vDSP_DFT_zop_CreateSetup(nullptr, static_cast<vDSP_Length>(len_), vDSP_DFT_FORWARD);
+                    if (!setup_) {
+                        setup_ = vDSP_DFT_CreateSetup(nullptr, static_cast<vDSP_Length>(len_));
+                        legacy_complex_ = setup_ != nullptr;
+                    }
+                }
             } else {
                 setup_ = vDSP_DFT_zop_CreateSetup(nullptr, static_cast<vDSP_Length>(len_), vDSP_DFT_FORWARD);
                 if (!setup_) {
@@ -840,6 +847,7 @@ namespace {
                 }
             }
             if (!setup_) throw std::runtime_error("failed to create vDSP RealDft<float>::Forward setup");
+            workBufferSize = WorkBufferSize(len_, real_even_);
         }
 
         void Execute(const Float *src, Float *dest, void *work) const {
@@ -854,16 +862,16 @@ namespace {
         int len() const { return len_; }
 
     private:
-        static int WorkBufferSize(int len) {
-            const int scalar_count = (len % 2 == 0) ? 2 * len : 4 * len;
+        static int WorkBufferSize(int len, bool real_even) {
+            const int scalar_count = real_even ? 2 * len : 4 * len;
             return static_cast<int>(scalar_count * sizeof(Float));
         }
 
         void ExecuteWithWork(const Float *src, Float *dest, Float *work) const {
-            if (len_ % 2 == 0) {
+            if (real_even_) {
                 ExecuteEven(src, dest, work);
             } else {
-                ExecuteOdd(src, dest, work);
+                ExecuteComplex(src, dest, work);
             }
         }
 
@@ -897,7 +905,7 @@ namespace {
             dest[2 * half + 1] = 0.0f;
         }
 
-        void ExecuteOdd(const Float *src, Float *dest, Float *work) const {
+        void ExecuteComplex(const Float *src, Float *dest, Float *work) const {
             const int half = len_ / 2;
             Float *in_real = work;
             Float *in_imag = in_real + len_;
@@ -913,20 +921,20 @@ namespace {
                 vDSP_DFT_Execute(setup_, in_real, in_imag, out_real, out_imag);
             }
 
-            // Odd N uses an exact-length complex DFT with zero imaginary input,
-            // not zero padding. There is no Nyquist singleton; preserve the
-            // final stored odd bin's imaginary component and only force DC imag
-            // to zero to match the public Forward layout.
+            // The complex fallback uses an exact-length DFT with zero imaginary
+            // input, not zero padding. Even N still exposes the Nyquist bin as
+            // a real singleton in the public CCS layout.
             dest[0] = out_real[0];
             dest[1] = 0.0f;
             for (int k = 1; k <= half; k++) {
                 dest[2 * k + 0] = out_real[k];
-                dest[2 * k + 1] = out_imag[k];
+                dest[2 * k + 1] = (len_ % 2 == 0 && k == half) ? 0.0f : out_imag[k];
             }
         }
 
         int len_;
         vDSP_DFT_Setup setup_;
+        bool real_even_;
         bool legacy_complex_;
     };
 
@@ -936,16 +944,24 @@ namespace {
         typedef std::hash<int> SizeHash;
 
         static int WorkBufferSize(int len) {
-            const int scalar_count = (len % 2 == 0) ? 2 * len : 4 * len;
+            const int scalar_count = 4 * len;
             return static_cast<int>(scalar_count * sizeof(Float));
         }
 
-        explicit MyVdspR2CBackwardDft32(int len): len_(len), setup_(nullptr), legacy_complex_(false) {
+        explicit MyVdspR2CBackwardDft32(int len): len_(len), setup_(nullptr), real_even_(false), legacy_complex_(false) {
             if (len_ <= 0) throw std::runtime_error("vDSP RealDft<float>::Backward length must be positive");
             workBufferSize = WorkBufferSize(len_);
 
             if (len_ % 2 == 0) {
                 setup_ = vDSP_DFT_zrop_CreateSetup(nullptr, static_cast<vDSP_Length>(len_), vDSP_DFT_INVERSE);
+                real_even_ = setup_ != nullptr;
+                if (!setup_) {
+                    setup_ = vDSP_DFT_zop_CreateSetup(nullptr, static_cast<vDSP_Length>(len_), vDSP_DFT_INVERSE);
+                    if (!setup_) {
+                        setup_ = vDSP_DFT_CreateSetup(nullptr, static_cast<vDSP_Length>(len_));
+                        legacy_complex_ = setup_ != nullptr;
+                    }
+                }
             } else {
                 setup_ = vDSP_DFT_zop_CreateSetup(nullptr, static_cast<vDSP_Length>(len_), vDSP_DFT_INVERSE);
                 if (!setup_) {
@@ -967,10 +983,10 @@ namespace {
 
     private:
         void ExecuteWithWork(const Float *src, Float *dest, Float *work) const {
-            if (len_ % 2 == 0) {
+            if (real_even_) {
                 ExecuteEven(src, dest, work);
             } else {
-                ExecuteOdd(src, dest, work);
+                ExecuteComplex(src, dest, work);
             }
         }
 
@@ -998,24 +1014,26 @@ namespace {
             }
         }
 
-        void ExecuteOdd(const Float *src, Float *dest, Float *work) const {
+        void ExecuteComplex(const Float *src, Float *dest, Float *work) const {
             const int half = len_ / 2;
             Float *in_real = work;
             Float *in_imag = in_real + len_;
             Float *out_real = in_imag + len_;
             Float *out_imag = out_real + len_;
 
-            // Odd N has no Nyquist singleton; the final stored bin is a full
-            // complex bin, so build the exact conjugate spectrum without padding.
+            // Build an exact conjugate spectrum without padding. Even N stores
+            // the Nyquist bin as a real singleton in the public CCS layout.
             in_real[0] = src[0];
             in_imag[0] = 0.0f;
             for (int k = 1; k <= half; k++) {
                 const Float real = src[2 * k + 0];
-                const Float imag = src[2 * k + 1];
+                const Float imag = (len_ % 2 == 0 && k == half) ? 0.0f : src[2 * k + 1];
                 in_real[k] = real;
                 in_imag[k] = imag;
-                in_real[len_ - k] = real;
-                in_imag[len_ - k] = -imag;
+                if (k < len_ - k) {
+                    in_real[len_ - k] = real;
+                    in_imag[len_ - k] = -imag;
+                }
             }
 
             if (legacy_complex_) {
@@ -1029,6 +1047,7 @@ namespace {
 
         int len_;
         vDSP_DFT_Setup setup_;
+        bool real_even_;
         bool legacy_complex_;
     };
 
