@@ -44,6 +44,7 @@ version.h
 
 # local Apple Silicon build attempts
 /build_mac_arm64_attempt*/
+/build_mac_arm64_dft_*/
 /deps/optim/src/optim-stamp/
 /deps/optim/tmp/
 /deps/optim/header_only_version/

@@ -165,10 +165,12 @@ elseif(APPLE)
     )
   endif()
   link_directories(BEFORE
+    ${LOCAL_PREFIX}/lib
     ${Boost_LIBRARY_DIRS}
     ${CONDA_PREFIX}/lib
   )
   include_directories(BEFORE
+    ${LOCAL_PREFIX}/include
     ${Boost_INCLUDE_DIRS}
     ${CONDA_PREFIX}/include
   )
