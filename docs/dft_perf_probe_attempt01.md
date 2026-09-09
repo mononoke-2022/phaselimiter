@@ -62,6 +62,41 @@ length=49152 repeats=3 work_size=786432 forward_ms_median=0.104 backward_ms_medi
 
 The run was manually stopped while measuring length `57344`, after more than 60 seconds without completing that length.
 
+## vDSP setup path probe
+
+Added a second non-production diagnostic target:
+
+- CMake option: `ENABLE_DFT_VDSP_PATH_PROBE`
+- executable: `dft_vdsp_path_probe`
+- source: `src/tools/dft_vdsp_path_probe.cpp`
+
+This tool checks which vDSP setup APIs can be created for each length, then reports the path the current Apple/non-IPP `RealDft<float>::Forward` implementation would select.
+
+Probe command:
+
+```txt
+dft_vdsp_path_probe --lengths 32768,49152,57344,65536
+```
+
+Observed output:
+
+```txt
+length=32768 forward_zrop=yes forward_zop=yes legacy=yes inverse_zrop=yes inverse_zop=yes production_forward_path=real_even_zrop
+length=49152 forward_zrop=yes forward_zop=yes legacy=yes inverse_zrop=yes inverse_zop=yes production_forward_path=real_even_zrop
+length=57344 forward_zrop=no forward_zop=no legacy=yes inverse_zrop=no inverse_zop=no production_forward_path=legacy_complex
+length=65536 forward_zrop=yes forward_zop=yes legacy=yes inverse_zrop=yes inverse_zop=yes production_forward_path=real_even_zrop
+```
+
+Additional nearby probe:
+
+```txt
+length=49152 forward_zrop=yes forward_zop=yes legacy=yes inverse_zrop=yes inverse_zop=yes production_forward_path=real_even_zrop
+length=57344 forward_zrop=no forward_zop=no legacy=yes inverse_zrop=no inverse_zop=no production_forward_path=legacy_complex
+length=65536 forward_zrop=yes forward_zop=yes legacy=yes inverse_zrop=yes inverse_zop=yes production_forward_path=real_even_zrop
+length=81920 forward_zrop=yes forward_zop=yes legacy=yes inverse_zrop=yes inverse_zop=yes production_forward_path=real_even_zrop
+length=98304 forward_zrop=yes forward_zop=yes legacy=yes inverse_zrop=yes inverse_zop=yes production_forward_path=real_even_zrop
+```
+
 ## Interpretation
 
 The slowdown is length-sensitive. Some large non-power-of-two lengths are still fast on the current Apple/non-IPP vDSP path, but length `57344` is extremely slow.
@@ -73,12 +108,8 @@ This lines up with the `phase_limiter` smoke result:
 
 The difference is not general WAV I/O, pre-compression, low/high cut, or simple limiting. It is a RealDft<float> length/path issue hit by `GradCalculator::outputUnitEval("src_with_cut")`.
 
+The vDSP path probe confirms that length `57344` cannot create the fast `zrop` real-even setup or the regular `zop` complex setup on this system. The current implementation therefore falls to the legacy complex vDSP API, which matches the process sample showing heavy `__sincos_stret` activity inside libvDSP.
+
 ## Suggested next step
 
-Add a non-production diagnostic print or a tool-side path probe to show whether a given Apple RealDft length uses:
-
-- vDSP `zrop` real-even setup
-- vDSP `zop` complex setup
-- legacy vDSP complex setup
-
-After that, the likely production fix is to avoid the slow complex fallback for problematic lengths, either by choosing supported fast DFT lengths in the phase limiter buffer sizing or by adding a faster Apple real-DFT fallback strategy for those lengths. Keep production DSP unchanged until the length/path choice is confirmed.
+The likely production fix is to avoid the slow complex fallback for problematic lengths, either by choosing supported fast DFT lengths in the phase limiter buffer sizing or by adding a faster Apple real-DFT fallback strategy for those lengths. Keep production DSP unchanged until that behavior change is explicitly approved.

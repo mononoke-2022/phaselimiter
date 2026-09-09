@@ -44,6 +44,7 @@ option(ENABLE_PHASE_LIMITER_DFT_AUDIO_SMOKE "build phase_limiter audio DFT smoke
 option(ENABLE_DFT_PERF_PROBE "build DFT performance probe tool" OFF)
 option(ENABLE_DFT_VDSP_FORWARD_PROTO "build Apple vDSP DFT forward prototype output tool" OFF)
 option(ENABLE_DFT_VDSP_BACKWARD_PROTO "build Apple vDSP DFT backward prototype output tool" OFF)
+option(ENABLE_DFT_VDSP_PATH_PROBE "build Apple vDSP DFT setup path probe tool" OFF)
 
 if(BAKUAGE_USE_IPP)
   add_definitions(-DBAKUAGE_USE_IPP=1)
@@ -386,6 +387,17 @@ target_link_libraries(dft_vdsp_backward_prototype
 )
 else()
 message(FATAL_ERROR "ENABLE_DFT_VDSP_BACKWARD_PROTO is supported only on Apple platforms")
+endif()
+endif()
+
+if(ENABLE_DFT_VDSP_PATH_PROBE)
+if(APPLE)
+add_executable(dft_vdsp_path_probe src/tools/dft_vdsp_path_probe.cpp)
+target_link_libraries(dft_vdsp_path_probe
+  "-framework Accelerate"
+)
+else()
+message(FATAL_ERROR "ENABLE_DFT_VDSP_PATH_PROBE is supported only on Apple platforms")
 endif()
 endif()
 
