@@ -12,12 +12,13 @@
 #include <thread>
 #include <vector>
 #include <list>
+#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64)
 #include <immintrin.h>
+#endif
 #include <random>
 #include <map>
 #include <chrono>
 #include "tbb/tbb.h"
-#include "tbb/pipeline.h"
 #include "tbb/scalable_allocator.h"
 #include "tbb/cache_aligned_allocator.h"
 #include "bakuage/memory.h"

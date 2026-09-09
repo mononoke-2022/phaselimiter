@@ -3,7 +3,12 @@
 
 #include <algorithm>
 #include <cstdint>
+#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64)
 #include <immintrin.h>
+#define BAKUAGE_FIR_FILTER_X86_INTRINSICS 1
+#else
+#define BAKUAGE_FIR_FILTER_X86_INTRINSICS 0
+#endif
 #include "bakuage/delay_filter.h"
 #include "bakuage/memory.h"
 
@@ -38,7 +43,7 @@ namespace bakuage {
         DelayFilter<Float> delay_filter_;
     };
 
-#ifdef __AVX__
+#if BAKUAGE_FIR_FILTER_X86_INTRINSICS && defined(__AVX__)
 //http://stackoverflow.com/questions/23189488/horizontal-sum-of-32-bit-floats-in-256-bit-avx-vector            
 inline float _mm256_reduce_add_ps(__m256 x) {
     /* ( x3+x7, x2+x6, x1+x5, x0+x4 ) */
@@ -52,6 +57,7 @@ inline float _mm256_reduce_add_ps(__m256 x) {
 }
 #endif
 
+#if BAKUAGE_FIR_FILTER_X86_INTRINSICS
 inline float _mm_reduce_add_ps(__m128 x128) {
 	/* ( -, -, x1+x3+x5+x7, x0+x2+x4+x6 ) */
 	const __m128 x64 = _mm_add_ps(x128, _mm_movehl_ps(x128, x128));
@@ -60,6 +66,7 @@ inline float _mm_reduce_add_ps(__m128 x128) {
 	/* Conversion to float is a no-op on x86-64 */
 	return _mm_cvtss_f32(x32);
 }
+#endif
 
     template<>
     class FirFilter<float> {
@@ -77,7 +84,7 @@ inline float _mm_reduce_add_ps(__m128 x128) {
         float Clock(const float &x) {
             delay_filter_.Clock(x);
 
-#ifdef __AVX__
+#if BAKUAGE_FIR_FILTER_X86_INTRINSICS && defined(__AVX__)
             int len = 8 * (fir_.size() / 8);
 		    __m256 sum = _mm256_set1_ps(0.0f);
             for (int i = 0; i < len; i += 8) {
@@ -92,7 +99,7 @@ inline float _mm_reduce_add_ps(__m128 x128) {
                 result += delay_filter_[i] * fir_[i];
             }
             return result + _mm256_reduce_add_ps(sum);
-#else
+#elif BAKUAGE_FIR_FILTER_X86_INTRINSICS
 			int len = 4 * (fir_.size() / 4);
 			__m128 sum = _mm_set1_ps(0.0f);
 			for (int i = 0; i < len; i += 4) {
@@ -107,6 +114,12 @@ inline float _mm_reduce_add_ps(__m128 x128) {
 				result += delay_filter_[i] * fir_[i];
 			}
 			return result + _mm_reduce_add_ps(sum);
+#else
+            float result = 0;
+            for (int i = 0; i < fir_.size(); i++) {
+                result += delay_filter_[i] * fir_[i];
+            }
+            return result;
 #endif
         };
         

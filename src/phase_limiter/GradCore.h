@@ -9,7 +9,9 @@
 #include <cmath>
 #include <stdint.h>
 #include <cstring>
+#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64)
 #include <immintrin.h>
+#endif
 #include <algorithm>
 #include <iostream>
 #include <mutex>

@@ -1,5 +1,7 @@
 #include "bakuage/vector_math.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <complex>
 
@@ -218,15 +220,25 @@ namespace bakuage {
     void VectorMulPermInplace<std::complex<double>>(const std::complex<double> *x, std::complex<double> *output, int n) {
         ippsMulPerm_64f_I((const double *)x, (double *)output, 2 * n);
     }
+#else
+    template <>
+    void VectorMulPermInplace<std::complex<float>>(const std::complex<float> *x, std::complex<float> *output, int n) {
+        for (int i = 0; i < n; i++) output[i] *= x[i];
+    }
+
+    template <>
+    void VectorMulPermInplace<std::complex<double>>(const std::complex<double> *x, std::complex<double> *output, int n) {
+        for (int i = 0; i < n; i++) output[i] *= x[i];
+    }
 
     template <>
     void VectorMulConj<std::complex<float>>(const std::complex<float> *x, const std::complex<float> *y, std::complex<float> *output, int n) {
-        ippsMulByConj_32fc_A24((Ipp32fc *)x, (Ipp32fc *)y, (Ipp32fc *)output, n);
+        for (int i = 0; i < n; i++) output[i] = x[i] * std::conj(y[i]);
     }
 
     template <>
 	    void VectorMulConj<std::complex<double>>(const std::complex<double> *x, const std::complex<double> *y, std::complex<double> *output, int n) {
-	        ippsMulByConj_64fc_A53((Ipp64fc *)x, (Ipp64fc *)y, (Ipp64fc *)output, n);
+	        for (int i = 0; i < n; i++) output[i] = x[i] * std::conj(y[i]);
 	    }
 #endif
 
@@ -510,6 +522,196 @@ namespace bakuage {
 	            output[i] = 1.0 / output[i];
 	        }
 	    }
+#else
+    template <>
+    void VectorSubConstantRev<float>(const float *x, const float &c, float *output, int n) {
+        for (int i = 0; i < n; i++) output[i] = c - x[i];
+    }
+
+    template <>
+    void VectorDivInplace<float>(const float *x, float *output, int n) {
+        for (int i = 0; i < n; i++) output[i] /= x[i];
+    }
+
+    template <>
+    void VectorDivInplace<double>(const double *x, double *output, int n) {
+        for (int i = 0; i < n; i++) output[i] /= x[i];
+    }
+
+    template <>
+    void VectorMadInplace<float>(const float *x, const float *y, float *output, int n) {
+        for (int i = 0; i < n; i++) output[i] += x[i] * y[i];
+    }
+
+    template <>
+    void VectorMadInplace<double>(const double *x, const double *y, double *output, int n) {
+        for (int i = 0; i < n; i++) output[i] += x[i] * y[i];
+    }
+
+    template <>
+    void VectorMadInplace<std::complex<float>>(const std::complex<float> *x, const std::complex<float> *y, std::complex<float> *output, int n) {
+        for (int i = 0; i < n; i++) output[i] += x[i] * y[i];
+    }
+
+    template <>
+    void VectorMadInplace<std::complex<double>>(const std::complex<double> *x, const std::complex<double> *y, std::complex<double> *output, int n) {
+        for (int i = 0; i < n; i++) output[i] += x[i] * y[i];
+    }
+
+    template <>
+    void VectorMadConstantInplace<float>(const float *x, const float &c, float *output, int n) {
+        for (int i = 0; i < n; i++) output[i] += x[i] * c;
+    }
+
+    template <>
+    void VectorMadConstantInplace<double>(const double *x, const double &c, double *output, int n) {
+        for (int i = 0; i < n; i++) output[i] += x[i] * c;
+    }
+
+    template <>
+    void VectorPowConstant<float>(const float *x, const float &c, float *output, int n) {
+        for (int i = 0; i < n; i++) output[i] = std::pow(x[i], c);
+    }
+
+    template <>
+    void VectorPowConstant<double>(const double *x, const double &c, double *output, int n) {
+        for (int i = 0; i < n; i++) output[i] = std::pow(x[i], c);
+    }
+
+    template <>
+    void VectorSqrtInplace<float>(float *output, int n) {
+        for (int i = 0; i < n; i++) output[i] = std::sqrt(output[i]);
+    }
+
+    template <>
+    void VectorSqrtInplace<double>(double *output, int n) {
+        for (int i = 0; i < n; i++) output[i] = std::sqrt(output[i]);
+    }
+
+    template <>
+    void VectorNorm<std::complex<float>, float>(const std::complex<float> *x, float *output, int n) {
+        for (int i = 0; i < n; i++) output[i] = std::norm(x[i]);
+    }
+
+    template <>
+    void VectorNorm<std::complex<double>, double>(const std::complex<double> *x, double *output, int n) {
+        for (int i = 0; i < n; i++) output[i] = std::norm(x[i]);
+    }
+
+    template <>
+    float VectorNormDiffL1<float>(const float *x, const float *y, int n) {
+        float output = 0;
+        for (int i = 0; i < n; i++) output += std::abs(x[i] - y[i]);
+        return output;
+    }
+
+    template <>
+    double VectorNormDiffL1<double>(const double *x, const double *y, int n) {
+        double output = 0;
+        for (int i = 0; i < n; i++) output += std::abs(x[i] - y[i]);
+        return output;
+    }
+
+    template <>
+    float VectorNormDiffL2<float>(const float *x, const float *y, int n) {
+        float output = 0;
+        for (int i = 0; i < n; i++) output += (x[i] - y[i]) * (x[i] - y[i]);
+        return std::sqrt(output);
+    }
+
+    template <>
+    double VectorNormDiffL2<double>(const double *x, const double *y, int n) {
+        double output = 0;
+        for (int i = 0; i < n; i++) output += (x[i] - y[i]) * (x[i] - y[i]);
+        return std::sqrt(output);
+    }
+
+    template <>
+    float VectorNormDiffInf<float>(const float *x, const float *y, int n) {
+        float output = 0;
+        for (int i = 0; i < n; i++) output = std::max(output, std::abs(x[i] - y[i]));
+        return output;
+    }
+
+    template <>
+    double VectorNormDiffInf<double>(const double *x, const double *y, int n) {
+        double output = 0;
+        for (int i = 0; i < n; i++) output = std::max(output, std::abs(x[i] - y[i]));
+        return output;
+    }
+
+    template <>
+    float VectorLInf<float>(const float *x, int n) {
+        float result = 0;
+        for (int i = 0; i < n; i++) result = std::max(result, std::abs(x[i]));
+        return result;
+    }
+
+    template <>
+    double VectorLInf<double>(const double *x, int n) {
+        double result = 0;
+        for (int i = 0; i < n; i++) result = std::max(result, std::abs(x[i]));
+        return result;
+    }
+
+    template <>
+    float VectorL2<float>(const float *x, int n) {
+        float result = 0;
+        for (int i = 0; i < n; i++) result += x[i] * x[i];
+        return std::sqrt(result);
+    }
+
+    template <>
+    float VectorL2<std::complex<float>>(const std::complex<float> *x, int n) {
+        float result = 0;
+        for (int i = 0; i < n; i++) result += std::norm(x[i]);
+        return std::sqrt(result);
+    }
+
+    template <>
+    double VectorL2<double>(const double *x, int n) {
+        double result = 0;
+        for (int i = 0; i < n; i++) result += x[i] * x[i];
+        return std::sqrt(result);
+    }
+
+    template <>
+    double VectorL2<std::complex<double>>(const std::complex<double> *x, int n) {
+        double result = 0;
+        for (int i = 0; i < n; i++) result += std::norm(x[i]);
+        return std::sqrt(result);
+    }
+
+    template <>
+    float VectorL2Sqr<float>(const std::complex<float> *x, int n) {
+        float result = 0;
+        for (int i = 0; i < n; i++) result += std::norm(x[i]);
+        return result;
+    }
+
+    template <>
+    float VectorSum<float>(const float *x, int n) {
+        float result = 0;
+        for (int i = 0; i < n; i++) result += x[i];
+        return result;
+    }
+
+    template <>
+    double VectorSum<double>(const double *x, int n) {
+        double result = 0;
+        for (int i = 0; i < n; i++) result += x[i];
+        return result;
+    }
+
+    template <>
+    void VectorInvInplace<float>(float *output, int n) {
+        for (int i = 0; i < n; i++) output[i] = 1.0f / output[i];
+    }
+
+    template <>
+    void VectorInvInplace<double>(double *output, int n) {
+        for (int i = 0; i < n; i++) output[i] = 1.0 / output[i];
+    }
 #endif
 
 	    template <>
@@ -808,5 +1010,25 @@ namespace bakuage {
 
 	        ippsConvolve_64f((const Ipp64f *)x, nx, (const Ipp64f *)y, ny, (Ipp64f *)output, ippAlgAuto, buffer.data());
 	    }
+#else
+    template <>
+    void VectorConvolve<float>(const float *x, int nx, const float *y, int ny, float *output) {
+        std::fill(output, output + nx + ny - 1, 0.0f);
+        for (int i = 0; i < nx; i++) {
+            for (int j = 0; j < ny; j++) {
+                output[i + j] += x[i] * y[j];
+            }
+        }
+    }
+
+    template <>
+    void VectorConvolve<double>(const double *x, int nx, const double *y, int ny, double *output) {
+        std::fill(output, output + nx + ny - 1, 0.0);
+        for (int i = 0; i < nx; i++) {
+            for (int j = 0; j < ny; j++) {
+                output[i + j] += x[i] * y[j];
+            }
+        }
+    }
 #endif
 	}

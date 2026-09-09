@@ -23,13 +23,15 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
 # for sandy bridge
 option(SANDYBRIDGE_SUPPORT "support sandy bridge (linux/apple only)" OFF)
-if(SANDYBRIDGE_SUPPORT)
-  add_definitions(-DSIMDPP_ARCH_X86_AVX)
-else()
-  add_definitions(-DSIMDPP_ARCH_X86_AVX)
-  add_definitions(-DSIMDPP_ARCH_X86_AVX2)
-  add_definitions(-DSIMDPP_ARCH_X86_FMA3)
-  add_compile_definitions(BA_FMA_ENABLED)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i[3-6]86)$")
+  if(SANDYBRIDGE_SUPPORT)
+    add_definitions(-DSIMDPP_ARCH_X86_AVX)
+  else()
+    add_definitions(-DSIMDPP_ARCH_X86_AVX)
+    add_definitions(-DSIMDPP_ARCH_X86_AVX2)
+    add_definitions(-DSIMDPP_ARCH_X86_FMA3)
+    add_compile_definitions(BA_FMA_ENABLED)
+  endif()
 endif()
 
 option(DISABLE_TARGET_BENCH "disable bench" OFF)
@@ -251,6 +253,34 @@ add_subdirectory(deps/gflags)
 
 if(WIN32)
 else()
+  if(APPLE AND NOT BAKUAGE_USE_IPP)
+    set(HNSW_APPLE_ARM64_PATCH ${CMAKE_SOURCE_DIR}/cmake/patches/hnswlib-apple-arm64.patch)
+    execute_process(
+      COMMAND git -C ${CMAKE_SOURCE_DIR}/deps/hnsw apply --check ${HNSW_APPLE_ARM64_PATCH}
+      RESULT_VARIABLE HNSW_APPLE_ARM64_PATCH_CHECK
+      OUTPUT_QUIET
+      ERROR_QUIET)
+    if(HNSW_APPLE_ARM64_PATCH_CHECK EQUAL 0)
+      execute_process(
+        COMMAND git -C ${CMAKE_SOURCE_DIR}/deps/hnsw apply ${HNSW_APPLE_ARM64_PATCH}
+        RESULT_VARIABLE HNSW_APPLE_ARM64_PATCH_APPLY
+        OUTPUT_QUIET
+        ERROR_QUIET)
+      if(NOT HNSW_APPLE_ARM64_PATCH_APPLY EQUAL 0)
+        message(FATAL_ERROR "failed to apply hnsw Apple arm64 patch")
+      endif()
+    else()
+      execute_process(
+        COMMAND git -C ${CMAKE_SOURCE_DIR}/deps/hnsw apply --reverse --check ${HNSW_APPLE_ARM64_PATCH}
+        RESULT_VARIABLE HNSW_APPLE_ARM64_PATCH_REVERSE_CHECK
+        OUTPUT_QUIET
+        ERROR_QUIET)
+      if(NOT HNSW_APPLE_ARM64_PATCH_REVERSE_CHECK EQUAL 0)
+        message(FATAL_ERROR "hnsw Apple arm64 patch is neither applicable nor already applied")
+      endif()
+    endif()
+  endif()
+
   # optim
   # https://stackoverflow.com/questions/5971921/building-a-library-using-autotools-from-cmake
   ExternalProject_Add(optim
@@ -281,7 +311,6 @@ file(GLOB BAKUAGE_SOURCES deps/bakuage/src/*)
 if(APPLE AND NOT BAKUAGE_USE_IPP)
   list(REMOVE_ITEM BAKUAGE_SOURCES
     ${CMAKE_SOURCE_DIR}/deps/bakuage/src/fir_filter4.cpp
-    ${CMAKE_SOURCE_DIR}/deps/bakuage/src/vector_math.cpp
     ${CMAKE_SOURCE_DIR}/deps/bakuage/src/window_func.cpp
   )
 endif()
@@ -381,6 +410,15 @@ target_link_libraries(test
 endif()
 
 file(GLOB BAKUAGE_PHASE_LIMITER_SOURCES src/phase_limiter/*)
+if(APPLE AND NOT BAKUAGE_USE_IPP)
+  list(APPEND BAKUAGE_PHASE_LIMITER_SOURCES
+    deps/optim/src/unconstrained/de.cpp
+    deps/optim/src/unconstrained/de_prmm.cpp
+    deps/optim/src/unconstrained/nm.cpp
+    deps/optim/src/unconstrained/pso.cpp
+    deps/optim/src/unconstrained/pso_dv.cpp
+  )
+endif()
 message("BAKUAGE_PHASE_LIMITER_SOURCES: ${BAKUAGE_PHASE_LIMITER_SOURCES}")
 add_executable(phase_limiter ${BAKUAGE_PHASE_LIMITER_SOURCES} ${TINY_PROCESS_SOURCES})
 target_link_libraries(phase_limiter

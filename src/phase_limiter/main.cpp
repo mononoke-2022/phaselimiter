@@ -12,13 +12,16 @@
 #include <stdexcept>
 #include <algorithm>
 #include <fstream>
+#include <memory>
 #include <streambuf>
 
 #include "boost/filesystem.hpp"
 #include "boost/serialization/vector.hpp"
 #include "gflags/gflags.h"
 #include "picojson.h"
+#if BAKUAGE_USE_IPP
 #include "ipp.h"
+#endif
 
 #include "audio_analyzer/peak.h"
 #include "bakuage/loudness_ebu_r128.h"
@@ -770,15 +773,28 @@ int main(int argc, char* argv[]) {
 
         PrintMemoryUsage();
 
+#if BAKUAGE_USE_IPP
         ippInit();
         const IppLibraryVersion *lib = ippGetLibVersion();
         std::cerr << "Ipp initialized " << lib->Name << " " << lib->Version << std::endl;
+#else
+        std::cerr << "IPP disabled" << std::endl;
+#endif
         PrintMemoryUsage();
 
         // TBBの初期化とか (ここで初期化しておくと、毎回初期化しなくても良いらしい)
         // https://www.xlsoft.com/jp/products/intel/perflib/tbb/41/tbb_userguide_lnx/reference/task_scheduler/task_scheduler_init_cls.htm
+#if TBB_INTERFACE_VERSION >= 12000
+        const int tbb_default_num_threads = tbb::this_task_arena::max_concurrency();
+        std::unique_ptr<tbb::global_control> tbb_control;
+        if (FLAGS_worker_count) {
+            tbb_control.reset(new tbb::global_control(tbb::global_control::max_allowed_parallelism, FLAGS_worker_count));
+        }
+        std::cerr << "TBB default_num_threads:" << tbb_default_num_threads << std::endl;
+#else
         tbb::task_scheduler_init tbb_init(FLAGS_worker_count ? FLAGS_worker_count : tbb::task_scheduler_init::default_num_threads());
         std::cerr << "TBB default_num_threads:" << tbb::task_scheduler_init::default_num_threads() << std::endl;
+#endif
         PrintMemoryUsage();
 
         phase_limiter::GradCoreSettings::GetInstance().set_erb_eval_func_weighting(FLAGS_erb_eval_func_weighting);

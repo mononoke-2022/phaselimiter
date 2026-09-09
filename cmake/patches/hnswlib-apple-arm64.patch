@@ -1,0 +1,108 @@
+diff --git a/hnswlib/hnswalg.h b/hnswlib/hnswalg.h
+index 9449e7b..bad38a5 100644
+--- a/hnswlib/hnswalg.h
++++ b/hnswlib/hnswalg.h
+@@ -13,7 +13,10 @@
+ #include <unordered_set>
+ #include <unordered_map>
+ 
+-
++#if !(defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64))
++#define _MM_HINT_T0 0
++#define _mm_prefetch(addr, hint) ((void)0)
++#endif
+ 
+ 
+ namespace hnswlib {
+diff --git a/hnswlib/space_ip.h b/hnswlib/space_ip.h
+index 81e4e59..b129de7 100644
+--- a/hnswlib/space_ip.h
++++ b/hnswlib/space_ip.h
+@@ -7,7 +7,12 @@
+ #define  __builtin_popcount(t) __popcnt(t)
+ #else
+ 
++#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64)
+ #include <x86intrin.h>
++#define HNSWLIB_X86_INTRINSICS 1
++#else
++#define HNSWLIB_X86_INTRINSICS 0
++#endif
+ 
+ #endif
+ 
+@@ -35,6 +40,7 @@ namespace hnswlib {
+     };
+ 
+ 
++#if HNSWLIB_X86_INTRINSICS
+     static float
+     InnerProductSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+         float PORTABLE_ALIGN32 TmpRes[8];
+@@ -207,6 +213,7 @@ namespace hnswlib {
+         return 1.0f - sum;
+ #endif
+     };
++#endif
+ 
+ 
+     class InnerProductSpace : public SpaceInterface<float> {
+@@ -217,10 +224,12 @@ namespace hnswlib {
+     public:
+         InnerProductSpace(size_t dim) {
+             fstdistfunc_ = InnerProduct;
++#if HNSWLIB_X86_INTRINSICS
+             if (dim % 4 == 0)
+                 fstdistfunc_ = InnerProductSIMD4Ext;
+             if (dim % 16 == 0)
+                 fstdistfunc_ = InnerProductSIMD16Ext;
++#endif
+             dim_ = dim;
+             data_size_ = dim * sizeof(float);
+         }
+diff --git a/hnswlib/space_l2.h b/hnswlib/space_l2.h
+index 0c1b260..0446e36 100644
+--- a/hnswlib/space_l2.h
++++ b/hnswlib/space_l2.h
+@@ -7,7 +7,12 @@
+ #define  __builtin_popcount(t) __popcnt(t)
+ #else
+ 
++#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64)
+ #include <x86intrin.h>
++#define HNSWLIB_X86_INTRINSICS 1
++#else
++#define HNSWLIB_X86_INTRINSICS 0
++#endif
+ 
+ #endif
+ 
+@@ -37,6 +42,7 @@ namespace hnswlib {
+     };
+ 
+ 
++#if HNSWLIB_X86_INTRINSICS
+     static float
+     L2SqrSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+         float *pVect1 = (float *) pVect1v;
+@@ -149,6 +155,7 @@ namespace hnswlib {
+ 
+         return (res);
+     };
++#endif
+ 
+     class L2Space : public SpaceInterface<float> {
+ 
+@@ -158,10 +165,12 @@ namespace hnswlib {
+     public:
+         L2Space(size_t dim) {
+             fstdistfunc_ = L2Sqr;
++#if HNSWLIB_X86_INTRINSICS
+             if (dim % 4 == 0)
+                 fstdistfunc_ = L2SqrSIMD4Ext;
+             if (dim % 16 == 0)
+                 fstdistfunc_ = L2SqrSIMD16Ext;
++#endif
+             /*else{
+                 throw runtime_error("Data type not supported!");
+             }*/

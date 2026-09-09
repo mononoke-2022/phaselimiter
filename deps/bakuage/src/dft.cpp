@@ -816,6 +816,30 @@ namespace bakuage {
 }
 #else
 namespace {
+    template <class Float>
+    void PackCcsToPerm(const Float *ccs, Float *perm, int len) {
+        const int half = len / 2;
+        perm[0] = ccs[0];
+        perm[1] = (len % 2 == 0) ? ccs[2 * half] : 0;
+        for (int k = 1; k < half; k++) {
+            perm[2 * k + 0] = ccs[2 * k + 0];
+            perm[2 * k + 1] = ccs[2 * k + 1];
+        }
+    }
+
+    template <class Float>
+    void UnpackPermToCcs(const Float *perm, Float *ccs, int len) {
+        const int half = len / 2;
+        ccs[0] = perm[0];
+        ccs[1] = 0;
+        for (int k = 1; k < half; k++) {
+            ccs[2 * k + 0] = perm[2 * k + 0];
+            ccs[2 * k + 1] = perm[2 * k + 1];
+        }
+        ccs[2 * half + 0] = (len % 2 == 0) ? perm[1] : perm[2 * half + 0];
+        ccs[2 * half + 1] = (len % 2 == 0) ? 0 : perm[2 * half + 1];
+    }
+
     struct MyVdspForwardDftBase {
         MyVdspForwardDftBase(): workBufferSize(0) {}
         int workBufferSize;
@@ -1051,6 +1075,112 @@ namespace {
         bool legacy_complex_;
     };
 
+    struct MyVdspR2CForwardDft64: public MyVdspForwardDftBase {
+        typedef double Float;
+        typedef int Size;
+        typedef std::hash<int> SizeHash;
+
+        explicit MyVdspR2CForwardDft64(int len): len_(len), setup_(nullptr) {
+            if (len_ <= 0) throw std::runtime_error("vDSP RealDft<double>::Forward length must be positive");
+            workBufferSize = WorkBufferSize(len_);
+            setup_ = vDSP_DFT_zop_CreateSetupD(nullptr, static_cast<vDSP_Length>(len_), vDSP_DFT_FORWARD);
+            if (!setup_) throw std::runtime_error("failed to create vDSP RealDft<double>::Forward setup");
+        }
+
+        void Execute(const Float *src, Float *dest, void *work) const {
+            if (work) {
+                ExecuteWithWork(src, dest, reinterpret_cast<Float *>(work));
+            } else {
+                std::vector<Float> fallback(static_cast<std::size_t>(workBufferSize / sizeof(Float)));
+                ExecuteWithWork(src, dest, fallback.data());
+            }
+        }
+
+        int len() const { return len_; }
+
+    private:
+        static int WorkBufferSize(int len) {
+            return static_cast<int>(4 * len * sizeof(Float));
+        }
+
+        void ExecuteWithWork(const Float *src, Float *dest, Float *work) const {
+            const int half = len_ / 2;
+            Float *in_real = work;
+            Float *in_imag = in_real + len_;
+            Float *out_real = in_imag + len_;
+            Float *out_imag = out_real + len_;
+
+            std::copy(src, src + len_, in_real);
+            std::fill(in_imag, in_imag + len_, 0.0);
+
+            vDSP_DFT_ExecuteD(setup_, in_real, in_imag, out_real, out_imag);
+
+            dest[0] = out_real[0];
+            dest[1] = 0.0;
+            for (int k = 1; k <= half; k++) {
+                dest[2 * k + 0] = out_real[k];
+                dest[2 * k + 1] = (len_ % 2 == 0 && k == half) ? 0.0 : out_imag[k];
+            }
+        }
+
+        int len_;
+        vDSP_DFT_SetupD setup_;
+    };
+
+    struct MyVdspR2CBackwardDft64: public MyVdspForwardDftBase {
+        typedef double Float;
+        typedef int Size;
+        typedef std::hash<int> SizeHash;
+
+        static int WorkBufferSize(int len) {
+            return static_cast<int>(4 * len * sizeof(Float));
+        }
+
+        explicit MyVdspR2CBackwardDft64(int len): len_(len), setup_(nullptr) {
+            if (len_ <= 0) throw std::runtime_error("vDSP RealDft<double>::Backward length must be positive");
+            workBufferSize = WorkBufferSize(len_);
+            setup_ = vDSP_DFT_zop_CreateSetupD(nullptr, static_cast<vDSP_Length>(len_), vDSP_DFT_INVERSE);
+            if (!setup_) throw std::runtime_error("failed to create vDSP RealDft<double>::Backward setup");
+        }
+
+        void Execute(const Float *src, Float *dest, void *work) const {
+            if (work) {
+                ExecuteWithWork(src, dest, reinterpret_cast<Float *>(work));
+            } else {
+                std::vector<Float> fallback(static_cast<std::size_t>(workBufferSize / sizeof(Float)));
+                ExecuteWithWork(src, dest, fallback.data());
+            }
+        }
+
+    private:
+        void ExecuteWithWork(const Float *src, Float *dest, Float *work) const {
+            const int half = len_ / 2;
+            Float *in_real = work;
+            Float *in_imag = in_real + len_;
+            Float *out_real = in_imag + len_;
+            Float *out_imag = out_real + len_;
+
+            in_real[0] = src[0];
+            in_imag[0] = 0.0;
+            for (int k = 1; k <= half; k++) {
+                const Float real = src[2 * k + 0];
+                const Float imag = (len_ % 2 == 0 && k == half) ? 0.0 : src[2 * k + 1];
+                in_real[k] = real;
+                in_imag[k] = imag;
+                if (k < len_ - k) {
+                    in_real[len_ - k] = real;
+                    in_imag[len_ - k] = -imag;
+                }
+            }
+
+            vDSP_DFT_ExecuteD(setup_, in_real, in_imag, out_real, out_imag);
+            std::copy(out_real, out_real + len_, dest);
+        }
+
+        int len_;
+        vDSP_DFT_SetupD setup_;
+    };
+
     template <class T>
     struct MyVdspDftLibrary {
         static MyVdspDftLibrary &GetInstance() {
@@ -1122,15 +1252,86 @@ namespace bakuage {
         dft->Execute(input, output, work_data);
     }
 
+    void RealDft<float>::ForwardPerm(const Float *input, Float *output, void *work_data) const {
+        const auto dft = (MyVdspR2CForwardDft32 *)dft_ptr_;
+        std::vector<Float> ccs(static_cast<std::size_t>(2 * (dft->len() / 2 + 1)), 0.0f);
+        dft->Execute(input, ccs.data(), work_data);
+        PackCcsToPerm(ccs.data(), output, dft->len());
+    }
+
+    void RealDft<float>::ForwardPack(const Float *, Float *, void *) const {
+        throw std::runtime_error("vDSP RealDft<float>::ForwardPack is not implemented");
+    }
+
     void RealDft<float>::Backward(const Float *input, Float *output, void *work_data) const {
         const auto forward = (MyVdspR2CForwardDft32 *)dft_ptr_;
         const auto dft = MyVdspDftLibrary<MyVdspR2CBackwardDft32>::GetInstance().get(forward->len());
         dft->Execute(input, output, work_data);
     }
 
+    void RealDft<float>::BackwardPerm(const Float *input, Float *output, void *work_data) const {
+        const auto forward = (MyVdspR2CForwardDft32 *)dft_ptr_;
+        std::vector<Float> ccs(static_cast<std::size_t>(2 * (forward->len() / 2 + 1)), 0.0f);
+        UnpackPermToCcs(input, ccs.data(), forward->len());
+        const auto dft = MyVdspDftLibrary<MyVdspR2CBackwardDft32>::GetInstance().get(forward->len());
+        dft->Execute(ccs.data(), output, work_data);
+    }
+
+    void RealDft<float>::BackwardPack(const Float *, Float *, void *) const {
+        throw std::runtime_error("vDSP RealDft<float>::BackwardPack is not implemented");
+    }
+
     size_t RealDft<float>::work_size() const {
         const auto forward = (MyVdspR2CForwardDft32 *)dft_ptr_;
         return (std::max)(forward->workBufferSize, MyVdspR2CBackwardDft32::WorkBufferSize(forward->len()));
+    }
+
+    RealDft<double>::RealDft(int len, bool no_internal_work) {
+        const auto forward = MyVdspDftLibrary<MyVdspR2CForwardDft64>::GetInstance().get(len);
+        dft_ptr_ = (void *)forward;
+        fft_ptr_ = nullptr;
+        if (!no_internal_work) {
+            work_ = FftMemoryBuffer(work_size());
+        }
+    }
+
+    void RealDft<double>::Forward(const Float *input, Float *output, void *work_data) const {
+        const auto dft = (MyVdspR2CForwardDft64 *)dft_ptr_;
+        dft->Execute(input, output, work_data);
+    }
+
+    void RealDft<double>::ForwardPerm(const Float *input, Float *output, void *work_data) const {
+        const auto dft = (MyVdspR2CForwardDft64 *)dft_ptr_;
+        std::vector<Float> ccs(static_cast<std::size_t>(2 * (dft->len() / 2 + 1)), 0.0);
+        dft->Execute(input, ccs.data(), work_data);
+        PackCcsToPerm(ccs.data(), output, dft->len());
+    }
+
+    void RealDft<double>::ForwardPack(const Float *, Float *, void *) const {
+        throw std::runtime_error("vDSP RealDft<double>::ForwardPack is not implemented");
+    }
+
+    void RealDft<double>::Backward(const Float *input, Float *output, void *work_data) const {
+        const auto forward = (MyVdspR2CForwardDft64 *)dft_ptr_;
+        const auto dft = MyVdspDftLibrary<MyVdspR2CBackwardDft64>::GetInstance().get(forward->len());
+        dft->Execute(input, output, work_data);
+    }
+
+    void RealDft<double>::BackwardPerm(const Float *input, Float *output, void *work_data) const {
+        const auto forward = (MyVdspR2CForwardDft64 *)dft_ptr_;
+        std::vector<Float> ccs(static_cast<std::size_t>(2 * (forward->len() / 2 + 1)), 0.0);
+        UnpackPermToCcs(input, ccs.data(), forward->len());
+        const auto dft = MyVdspDftLibrary<MyVdspR2CBackwardDft64>::GetInstance().get(forward->len());
+        dft->Execute(ccs.data(), output, work_data);
+    }
+
+    void RealDft<double>::BackwardPack(const Float *, Float *, void *) const {
+        throw std::runtime_error("vDSP RealDft<double>::BackwardPack is not implemented");
+    }
+
+    size_t RealDft<double>::work_size() const {
+        const auto forward = (MyVdspR2CForwardDft64 *)dft_ptr_;
+        return (std::max)(forward->workBufferSize, MyVdspR2CBackwardDft64::WorkBufferSize(forward->len()));
     }
 }
 #endif
