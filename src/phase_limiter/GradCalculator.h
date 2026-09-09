@@ -479,7 +479,7 @@ namespace phase_limiter {
             // 前後に評価関数用の余白を設ける
             bg = fft_max_len() / 2;
             ed = bg + CeilInt<int>(len, SimdType::length * oversample_);
-            memLen = CeilInt<int>(ed + fft_max_len() / 2, fft_max_len() / 2);
+            memLen = real_dft_friendly_mem_len(CeilInt<int>(ed + fft_max_len() / 2, fft_max_len() / 2));
             for (int i = 0; i < 2; i++) {
                 waveProx[i] = TypedMalloc<Float>(memLen);
                 wavePrev[i] = TypedMalloc<Float>(memLen);
@@ -580,6 +580,13 @@ namespace phase_limiter {
         int fft_min_len() const { return (1 << 8) * (sample_rate_ / 44100); }
         int fft_max_len() const { return PL_FFT_MAX_LEN * (sample_rate_ / 44100); }
         int oversample_filter_fft_len() const { return 2 * fft_max_len(); }
+        static int real_dft_friendly_mem_len(int len) {
+#if defined(__APPLE__) && !BAKUAGE_USE_IPP
+            return static_cast<int>(bakuage::CeilPowerOf2(static_cast<unsigned int>(len)));
+#else
+            return len;
+#endif
+        }
         
         // input
         template <class DoublePtr>
