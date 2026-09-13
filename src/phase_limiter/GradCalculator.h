@@ -9,6 +9,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 #include <list>
@@ -706,6 +707,9 @@ namespace phase_limiter {
         template <class ProgressCallback>
         void optimizeWithProgressCallback(const ProgressCallback &callback, double unit_eval) {
             using namespace impl;
+            if (max_iter1_ <= 0 || max_iter2_ <= 0) {
+                throw std::invalid_argument("phase limiter iteration limits must be positive");
+            }
             
             std::cerr << "optimizeWithProgressCallback" << std::endl;
             tasks->clearCache();
@@ -943,6 +947,7 @@ namespace phase_limiter {
                 // (理由違うかも、局所解に落ちていて、tの減少は妥当なものかも)
                 // あまり結果に影響を与えないので、オッカムの剃刀理論にもとづいて、オフにする
                 // t *= 1.1;
+                bool candidate_accepted = false;
                 while (iter2 <= kMaxIter2) {
                     // callback(std::max<double>((double)iter / kMaxIter1, (double)iter2 / kMaxIter2));
                     PerformanceCounter::GetInstance().Start("calcEval");
@@ -1017,6 +1022,7 @@ namespace phase_limiter {
                     std::cerr << "evalProx:" << eval_prox_result.eval + evalProxHi << "\tevalOut:" << evalOut << "\tdot_product:" << eval_prox_result.dot_product << "\tnorm_sqr:" << eval_prox_result.norm_sqr << std::endl;
                     if (eval_prox_result.eval + evalProxHi <= evalOut + eval_prox_result.dot_product + (0.5f / t) * eval_prox_result.norm_sqr) {
                         const double normalized_eval = ((eval_prox_result.eval + evalProxHi) * bakuage::Sqr(noise)) / (1e-37 + unit_eval * bakuage::Sqr(noise_update_min_noise_));
+                        candidate_accepted = true;
                         prevEvalProx = eval_prox_result.eval + evalProxHi;
                         prevNormalizedEvalProx = normalized_eval;
                         std::cerr << "eval:" << prevEvalProx << "\tt:" << t << "\tnoise:" << noise << "\tnormalized_eval:" << normalized_eval << std::endl;
@@ -1026,6 +1032,10 @@ namespace phase_limiter {
                     iter2++;
                 }
                 
+                // waveProx holds the last trial, even when the line search rejects it.
+                if (!candidate_accepted) {
+                    throw std::runtime_error("phase limiter line search exhausted max_iter2 without an accepted candidate; output aborted");
+                }
                 iter++;
             }
             last_iter = iter;
